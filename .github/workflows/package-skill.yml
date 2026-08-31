@@ -1,0 +1,45 @@
+name: Package Skill
+
+on:
+  workflow_dispatch:
+    inputs:
+      skill:
+        description: '选择需要打包的 Skill（下拉菜单）'
+        required: true
+        type: choice
+        options:
+          - repo-deploy-packager
+          # 👉 新增 Skill 时，在此 options 列表追加一行该 Skill 的目录名（与根目录文件夹同名）
+
+jobs:
+  build:
+    name: Zip and upload skill
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Validate selection
+        run: |
+          SKILL="${{ github.event.inputs.skill }}"
+          echo "Selected skill: $SKILL"
+          if [ ! -d "skills/$SKILL" ]; then
+            echo "::error::Skill folder 'skills/$SKILL' not found in repo." >&2
+            exit 1
+          fi
+
+      - name: Package skill folder into ZIP
+        run: |
+          SKILL="${{ github.event.inputs.skill }}"
+          zip -r "${SKILL}.zip" "skills/${SKILL}"
+          echo "Created ${SKILL}.zip"
+          ls -lh "${SKILL}.zip"
+
+      - name: Upload ZIP as artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ github.event.inputs.skill }}
+          path: ${{ github.event.inputs.skill }}.zip
+          if-no-files-found: error

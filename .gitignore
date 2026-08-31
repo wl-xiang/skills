@@ -1,0 +1,32 @@
+# ---- Build / packaging artifacts ----
+dist/
+*.zip
+
+# ---- OS ----
+.DS_Store
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+
+# ---- Editor / IDE ----
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# ---- Python ----
+__pycache__/
+*.py[cod]
+*$py.class
+.venv/
+venv/
+
+# ---- Node ----
+node_modules/
+
+# ---- Logs (if any generated locally) ----
+*.log
+
+# ---- Temp ----
+*.tmp
+*~
