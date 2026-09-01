@@ -5,7 +5,7 @@ Recurring failure modes observed while deploying/packaging real repos
 
 ## 1. `docker load` "The system cannot find the path specified" (Windows Git Bash)
 
-**Symptom:** `docker load --input /d/desktop2/b/results/x/x_docker-images.tgz`
+**Symptom:** `docker load --input /d/desktop2/b/results/x/x_x64_docker-images.tgz`
 fails with a Windows error 3, even though the file exists and `sha256sum` read it fine.
 
 **Cause:** The Windows build of `docker.exe` does not understand Git Bash's
@@ -13,7 +13,7 @@ fails with a Windows error 3, even though the file exists and `sha256sum` read i
 
 **Fix:** `cd` into the directory holding the archive and pass a **relative** path:
 ```bash
-cd results/<repo> && docker load --input <repo>_docker-images.tgz
+cd results/<repo> && docker load --input <repo>_<x64|arm>_docker-images.tgz
 ```
 `scripts/verify.sh` already does this. `docker save` does not have this problem
 because its output goes through a shell redirect, not a docker flag.

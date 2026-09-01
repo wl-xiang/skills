@@ -1,26 +1,40 @@
 #!/usr/bin/env bash
-# pack.sh <repo_name> <compose_project_dir> [--profile <name>]
+# pack.sh <repo_name> <compose_project_dir> [--arch <x64|arm>] [--profile <name>]
 #
 # Run FROM the workspace root (the directory containing results/, repos/, logs/).
 # Produces, under results/<repo_name>/:
-#   <repo_name>_docker-images.tgz   (all compose images, gzip)
-#   <repo_name>_source-code.tgz     (source, excludes .git and node_modules)
+#   <repo_name>_<x64|arm>_docker-images.tgz   (all compose images, gzip)
+#   <repo_name>_<x64|arm>_source-code.tgz     (source, excludes .git and node_modules)
 # and prints their sizes + sha256sum.
 #
-# Designed to be called by the repo-deploy-packager skill Phase 3.
+# Designed to be called by the repo-deploy-packager skill Phase 3. Pass --arch from
+# the target deployment architecture determined in Phase 0 (amd64/x86_64 -> x64,
+# arm64/aarch64 -> arm). Defaults to the build machine's arch when omitted.
 set -euo pipefail
 
-repo="${1:?usage: pack.sh <repo_name> <compose_project_dir> [--profile <name>]}"
-compose_dir="${2:?usage: pack.sh <repo_name> <compose_project_dir> [--profile <name>]}"
+repo="${1:?usage: pack.sh <repo_name> <compose_project_dir> [--arch <x64|arm>] [--profile <name>]}"
+compose_dir="${2:?usage: pack.sh <repo_name> <compose_project_dir> [--arch <x64|arm>] [--profile <name>]}"
 shift 2
 
+arch=""
 profile=""
 while [ $# -gt 0 ]; do
   case "$1" in
+    --arch) arch="${2:-}"; shift 2 ;;
     --profile) profile="${2:-}"; shift 2 ;;
     *) shift ;;
   esac
 done
+
+# Detect arch NOTE: x64 -> amd64/x86_64, arm -> arm64/aarch64.
+detect_arch() {
+  case "$(uname -m)" in
+    x86_64|amd64|x64|i686|i386) echo "x64" ;;
+    aarch64|arm64|armv7*|armv8*|arm*) echo "arm" ;;
+    *) echo "x64" ;;
+  esac
+}
+[ -z "$arch" ] && arch="$(detect_arch)"
 
 # Resolve compose_project_dir to an absolute, script-friendly path.
 compose_dir="$(cd "$compose_dir" && pwd)"
@@ -30,11 +44,11 @@ results_dir="$workspace_root/results/$repo"
 log_dir="$workspace_root/logs"
 mkdir -p "$results_dir" "$log_dir"
 
-img_tgz="$results_dir/${repo}_docker-images.tgz"
-src_tgz="$results_dir/${repo}_source-code.tgz"
+img_tgz="$results_dir/${repo}_${arch}_docker-images.tgz"
+src_tgz="$results_dir/${repo}_${arch}_source-code.tgz"
 profile_arg="${profile:+--profile $profile}"
 
-echo "=== [3] packaging repo: $repo ==="
+echo "=== [3] packaging repo: $repo (arch=$arch) ==="
 echo "compose dir : $compose_dir"
 echo "results dir : $results_dir"
 

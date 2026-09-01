@@ -13,7 +13,8 @@ plus source code) into verifiable TGZ archives following a fixed workspace layou
 
 - The user asks to "deploy and package" a project and provides a GitHub/Git URL (or asks
   you to deploy a repo and produce offline-restoreable artifacts).
-- The task implies a runnable container plus `docker-images.tgz` / `source-code.tgz` with
+- The task implies a runnable container plus `<repo_name>_<x64|arm>_docker-images.tgz` /
+  `<repo_name>_<x64|arm>_source-code.tgz` with
   recorded SHA256 checksums, organized under a fixed folder structure.
 - A strict, phase-by-phase workflow with a confirmation gate between phases is expected.
 
@@ -24,10 +25,14 @@ Apply these for every project processed by this skill:
 - `repos/<repo_name>/` — target directory for `git clone`.
 - `results/<repo_name>/` — output directory for packaged TGZs.
 - `logs/` — every log file (build, save, tar, verify) goes here.
-- File naming: **all** logs and result files use the `<repo_name>_` prefix.
+- File naming: **all** logs and result files use the `<repo_name>_` prefix, and result
+  TGZs additionally encode the **target architecture** as `<x64|arm>`:
   - Logs: `logs/<repo_name>_build.log`, `logs/<repo_name>_save.log`, `logs/<repo_name>_tar.log`, etc.
-  - Results: `results/<repo_name>/<repo_name>_docker-images.tgz`,
-    `results/<repo_name>/<repo_name>_source-code.tgz`.
+  - Results: `results/<repo_name>/<repo_name>_<x64|arm>_docker-images.tgz`,
+    `results/<repo_name>/<repo_name>_<x64|arm>_source-code.tgz`.
+- Architecture token map (from Phase 0): `amd64`/`x86_64` → `x64`;
+  `arm64`/`aarch64` → `arm`. Every TGZ carries the target-arch token
+  (`<repo_name>_<x64|arm>_<docker-images|source-code>.tgz`).
 - Derive `<repo_name>` from the repo URL's last path segment, stripped of `.git`
   (e.g. `https://github.com/excalidraw/excalidraw.git` → `excalidraw`).
 
@@ -101,29 +106,34 @@ user. If an `.env` is required, generate it from `.env.example`, filling secret 
 
 ## Phase 3 — Package Artifacts
 
-Run `scripts/pack.sh <repo_name> <compose_project_dir> [--profile <p>]` from the workspace root.
+Run `scripts/pack.sh <repo_name> <compose_project_dir> [--arch <x64|arm>] [--profile <p>]` from the workspace root.
 The script:
 
 - **3-A** lists `docker compose images`, then `docker save <images...> | gzip >
-  results/<repo_name>/<repo_name>_docker-images.tgz` (include base images such as
+  results/<repo_name>/<repo_name>_<x64|arm>_docker-images.tgz` (include base images such as
   `postgres:15` so the archive is self-restorable offline).
 - **3-B** tars the source (exclude `.git`; also exclude `node_modules` when present) to
-  `results/<repo_name>/<repo_name>_source-code.tgz`.
+  `results/<repo_name>/<repo_name>_<x64|arm>_source-code.tgz`.
 - Prints file sizes and `sha256sum` for both archives.
+
+Pass `--arch <x64|arm>` from the **target** architecture chosen in Phase 0 (if omitted,
+the script falls back to the build machine's arch via `uname -m`). Name → token:
+`amd64`/`x86_64` → `x64`; `arm64`/`aarch64` → `arm`.
 
 If buildx multi-arch was used, inspect the target platform with
 `docker buildx imagetools inspect <image>` before exporting.
 
 ## Phase 4 — Acceptance & Cleanup Prompt
 
-Verify each item (use `scripts/verify.sh <repo_name>` for the restore/extract checks):
+Verify each item (use `scripts/verify.sh <repo_name> --arch <x64|arm>` — match the same
+arch passed to pack.sh — for the restore/extract checks):
 
 | # | Check | Method |
 |---|-------|--------|
 | 1 | Containers `docker compose ps` healthy | `docker compose ps` |
 | 2 | Service port reachable / health passes | `curl` the port(s) |
-| 3 | `docker-images.tgz` loadable & restoreable | `docker load` (relative path!) |
-| 4 | `source-code.tgz` extractable, complete | `tar -xzf` to temp, count files, ensure no `.git` |
+| 3 | `<repo_name>_<arch>_docker-images.tgz` loadable & restoreable | `docker load` (relative path!) |
+| 4 | `<repo_name>_<arch>_source-code.tgz` extractable, complete | `tar -xzf` to temp, count files, ensure no `.git` |
 | 5 | SHA256 of both TGZs recorded | from Phase 3 output |
 
 After **all ✅**, ask the user (AskUserQuestion, multi-select) whether to:
@@ -140,10 +150,11 @@ only on explicit confirmation.
 
 ## Bundled Resources
 
-- `scripts/pack.sh` — Phase 3 packaging (save images + tar source + sha256). Run from the
-  workspace root: `bash skills/repo-deploy-packager/scripts/pack.sh <repo> <compose_dir> [--profile <p>]`.
+- `scripts/pack.sh` — Phase 3 packaging (save images + tar source + sha256; names files
+  `<repo_name>_<x64|arm>_docker-images.tgz` / `..._source-code.tgz`). Run from the
+  workspace root: `bash skills/repo-deploy-packager/scripts/pack.sh <repo> <compose_dir> [--arch <x64|arm>] [--profile <p>]`.
 - `scripts/verify.sh` — Phase 4 restore/extract verification. Run from the workspace root:
-  `bash skills/repo-deploy-packager/scripts/verify.sh <repo>`.
+  `bash skills/repo-deploy-packager/scripts/verify.sh <repo> [--arch <x64|arm>]`.
 - `scripts/setup-docker-mirror.sh` — **Manual-only** Docker Hub mirror acceleration for
   China / slow pulls. Presents the one-click `linuxmirrors.cn` config; never auto-run
   (uses `sudo`). See `references/docker-mirror.md`.
