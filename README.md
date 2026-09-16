@@ -10,7 +10,7 @@ skills-repo/
 ├── .gitignore
 ├── .github/
 │   └── workflows/
-│       └── package-skill.yml   # GitHub Action：下拉选择 Skill 并打包为 ZIP
+│       └── package-skill.yml   # GitHub Action：选择压缩格式，打包全部 Skill
 └── skills/                # 所有 Skill 统一存放在此目录下
     └── <skill-name>/      # 每个 Skill 一个目录，目录名即技能名
         ├── SKILL.md       # 必须：技能定义 + frontmatter
@@ -24,21 +24,36 @@ skills-repo/
 | Skill | 说明 |
 |-------|------|
 | `repo-deploy-packager` | 通过 Docker Compose 部署任意 Git 仓库，并把构建出的镜像 + 源码打包成可离线还原的 TGZ 归档（带 SHA256 校验）。固定 5 阶段 SOP 与目录/命名规范。 |
+| `init-debian` | Debian 系 Linux 一键装机助手。幂等、可恢复的全流程环境初始化：基础工具、Python/Node/Docker/Go 运行时、AI CLI 工具、Oracle Instant Client、GUI 应用（含 Desktop 条目）、主题与字体、Python 库、Cron 任务，以及 Mint 专属主题。支持 Ubuntu / Debian / Linux Mint。 |
 
 > 新增 Skill 后，请在本表补充一行。
 
 ## GitHub Action 自动打包
 
-仓库内置 GitHub Action（`.github/workflows/package-skill.yml`），可把指定 Skill 文件夹一键打包成 ZIP 并作为 Artifact 输出。
+仓库内置 GitHub Action（`.github/workflows/package-skill.yml`），可将 `skills/` 下所有 Skill 一键打包成单个归档文件并作为 Artifact 输出。
 
 **使用方式：**
-1. 进入仓库的 **Actions** 标签页，选择 **Package Skill** 工作流。
+1. 进入仓库的 **Actions** 标签页，选择 **Package Skills** 工作流。
 2. 点击 **Run workflow**。
-3. 在出现的**下拉菜单**中选择要打包的 Skill（目前可选：`repo-deploy-packager`）。
-4. 运行完成后，在 workflow 运行记录的 **Artifacts** 区域下载对应的 `<skill-name>.zip`。
+3. 在**格式下拉菜单**中选择压缩格式：`tgz`（推荐，体积更小）或 `zip`。
+4. 运行完成后，在 workflow 运行记录的 **Artifacts** 区域下载 `wl-xiang_skills.tgz`（或 `.zip`）。
 
-> 所有 Skill 都统一放在仓库的 `skills/` 目录下，工作流会自动打包 `skills/<skill-name>` 这个文件夹。
-> 打包产物仅作为 Artifact 提供下载，不会写回仓库（`.gitignore` 已忽略 `*.zip`，保持仓库干净）。
+**产物结构示例（选 tgz 时）：**
+
+```
+wl-xiang_skills.tgz
+├── init-debian.tgz
+│   └── init-debian/
+│       ├── SKILL.md
+│       └── scripts/
+├── repo-deploy-packager.tgz
+│   └── repo-deploy-packager/
+│       ├── SKILL.md
+│       └── scripts/
+└── ...
+```
+
+> 打包产物仅作为 Artifact 提供下载，不会写回仓库。
 
 ## 如何使用 / 添加某个 Skill
 
@@ -84,12 +99,6 @@ ln -s "$(pwd)/skills/repo-deploy-packager" ~/.workbuddy/skills/repo-deploy-packa
 3. 可复用脚本放进 `scripts/`，参考文档放进 `references/`，静态资源放进 `assets/`。
 4. 建议用 `skill-creator` 的 `package_skill.py` 校验结构后再提交。
 5. 在上方「收录的 Skills」表格补充一行。
-6. **同步更新 GitHub Action 下拉菜单**：打开 `.github/workflows/package-skill.yml`，在 `inputs.skill.options:` 列表里追加一行该 Skill 的目录名，否则它不会出现在打包界面的下拉选项中。例如：
-   ```yaml
-   options:
-     - repo-deploy-packager
-     - your-new-skill     # ← 新增这一行
-   ```
 
 ## 约定
 

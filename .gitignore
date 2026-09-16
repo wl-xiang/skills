@@ -1,6 +1,7 @@
 # ---- Build / packaging artifacts ----
 dist/
 *.zip
+*.tgz
 
 # ---- OS ----
 .DS_Store
