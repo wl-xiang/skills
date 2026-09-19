@@ -24,7 +24,7 @@ skills-repo/
 | Skill | 说明 |
 |-------|------|
 | `repo-deploy-packager` | 通过 Docker Compose 部署任意 Git 仓库，并把构建出的镜像 + 源码打包成可离线还原的 TGZ 归档（带 SHA256 校验）。固定 5 阶段 SOP 与目录/命名规范。 |
-| `init-debian` | Debian 系 Linux 一键装机助手。幂等、可恢复的全流程环境初始化：基础工具、Python/Node/Docker/Go 运行时、AI CLI 工具、Oracle Instant Client、GUI 应用（含 Desktop 条目）、主题与字体、Python 库、Cron 任务，以及 Mint 专属主题。支持 Ubuntu / Debian / Linux Mint。 |
+| `init-linux` | Linux 一键装机助手（DEB 系 + RPM 系）。幂等、可恢复的全流程环境初始化：基础工具、Python/Node/Docker 运行时、Ruff 与 bash-language-server 等 LSP 工具、AI CLI 工具、Oracle Instant Client、GUI 应用（含 Desktop 条目）、主题与字体、Python 库、Cron 任务，以及 Mint 专属主题。Go / Rust / Vue / React 为可选组件，安装前会先询问用户勾选，未勾选则跳过。支持 Ubuntu / Debian / Linux Mint（apt）与 Fedora / RHEL / CentOS Stream / Rocky / AlmaLinux（dnf/yum）。 |
 
 > 新增 Skill 后，请在本表补充一行。
 
@@ -42,8 +42,8 @@ skills-repo/
 
 ```
 wl-xiang_skills.tgz
-├── init-debian.tgz
-│   └── init-debian/
+├── init-linux.tgz
+│   └── init-linux/
 │       ├── SKILL.md
 │       └── scripts/
 ├── repo-deploy-packager.tgz

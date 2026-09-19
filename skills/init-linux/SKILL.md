@@ -6,11 +6,14 @@ description: >
   RPM-based (Fedora / RHEL / CentOS Stream / Rocky / AlmaLinux, dnf or yum),
   e.g. "帮我初始化这台新机器", "一键装机", "init linux", "配置开发环境",
   "装一遍我的常用工具". It performs an idempotent, logged, resumable full-stack
-  setup: base tools, Python/Node/Docker/Go runtimes, AI CLI tools, Oracle
-  Instant Client, GUI apps with Desktop entries, themes & fonts, Python
-  libraries, a Downloads cron job, and Mint-specific themes. It should NOT be
-  used for single-package installs or unsupported distros (Arch 等；openSUSE
-  的 zypper 流程未完整覆盖，仅部分步骤可用).
+  setup: base tools, Python/Node/Docker runtimes, Ruff and bash-language-server,
+  AI CLI tools, Oracle Instant Client, GUI apps with Desktop entries, themes &
+  fonts, Python libraries, a Downloads cron job, and Mint-specific themes.
+  Go / Rust / Vue / React are OPTIONAL components: the skill asks the user to
+  select them (multi-choice) before installing anything, and skips unselected
+  ones, so it also handles requests like "装个 Rust/Go 环境" as part of setup.
+  It should NOT be used for single-package installs or unsupported distros
+  (Arch 等；openSUSE 的 zypper 流程未完整覆盖，仅部分步骤可用).
 agent_created: true
 ---
 
@@ -60,6 +63,25 @@ openSUSE 不在完整支持范围内：基础工具可尝试 zypper，第三方�
 - **统一前置**：`mkdir -p ~/.local/bin` 并确认该目录在 PATH 中（`echo $PATH` 检测，缺失时
   在 `~/.profile` 或 `~/.bashrc` 追加 `export PATH="$HOME/.local/bin:$PATH"`，追加前先 grep 防重复）。
   后续 yq、ruff、fd/bat 软链、basedpyright 软链等都写入此目录。
+
+## 步骤 0：可选组件确认（流程开始前，必须先与用户交互）
+
+**时序**：在完成「包管理器适配」与「执行环境信息」探测之后、任何安装步骤之前执行本步骤；
+展示勾选清单时可附上探测结果（如检测到已装 Go 则在清单中提示）。
+
+以下开发环境为**可选项**，必须在执行任何安装步骤前向用户展示清单并让其勾选（多选）。
+**未勾选的一律不安装**，在最终汇总中标记 ⚠️未选跳过，严禁默认安装：
+
+| 选项 | 内容 | 对应步骤 |
+|------|------|----------|
+| Go | Golang 最新稳定版运行时 | 2.4 |
+| Rust | rustup + rustc/cargo 工具链 | 2.5 |
+| Vue | Vue 3 语言服务（`@vue/language-server`、`@vue/typescript-plugin`，含 `typescript` 依赖） | 2.7 |
+| React | TypeScript + typescript-language-server（覆盖 TSX 的 LSP） | 2.7 |
+
+说明：
+- `bash-language-server`（2.7 固定部分）与其余所有步骤（含 2.6 Ruff）均为必装/必执行，不受勾选影响；
+- 勾选结果必须记录下来，供步骤 2.4–2.7 与最终汇总使用。
 
 ## 步骤 1：系统基础工具
 
@@ -133,7 +155,7 @@ openSUSE 不在完整支持范围内：基础工具可尝试 zypper，第三方�
 安装后（两系通用）：将当前用户加入 docker 组（`sudo usermod -aG docker $USER`，提醒需重新登录生效），
 启用并启动 docker 服务。验证 `docker --version` 与 `docker compose version`。
 
-### 2.4 Golang（最新稳定版）
+### 2.4 Golang（最新稳定版，可选 — 仅当用户在步骤 0 勾选 Go 时执行，否则跳过并记录）
 
 查询 `https://go.dev/dl/?mode=json` 获取最新 stable 版本号，
 下载 `go<版本>.linux-<arch>.tar.gz`（`<arch>` 按架构命名映射取 `amd64`/`arm64`），
@@ -143,12 +165,34 @@ openSUSE 不在完整支持范围内：基础工具可尝试 zypper，第三方�
 写入前先 grep 检测是否已存在该 PATH 条目，避免重复追加。
 验证 `go version`。（两系通用，无包管理器差异。）
 
-### 2.5 Ruff（Python Linter / Formatter）
+### 2.5 Rust（可选 — 仅当用户在步骤 0 勾选 Rust 时执行，否则跳过并记录）
+
+1. 先 `command -v rustc` 检测，已安装则跳过；
+2. 执行 rustup 官方脚本静默安装：
+   `curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y`；
+3. 安装后 `source "$HOME/.cargo/env"`（脚本会自动把 `~/.cargo/bin` 写入环境文件）；
+4. 验证 `rustc --version` 与 `cargo --version`。（两系通用。）
+
+### 2.6 Ruff（Python Linter / Formatter，必装）
 
 1. 先 `command -v ruff` 检测，已安装则跳过；
 2. 否则执行官方安装脚本：`curl -LsSf https://astral.sh/ruff/install.sh | sh`；
 3. 脚本默认安装到 `~/.local/bin`（需确认该目录在 PATH 中，通常已默认包含）；
 4. 验证 `ruff --version`。（两系通用。）
+
+### 2.7 全局 NPM 工具（LSP / 前端开发，两系通用）
+
+**固定安装**（不受步骤 0 勾选影响）：
+1. 先 `npm ls -g --depth=0` 查看已装的全局包，`bash-language-server` 已存在则跳过；
+2. 缺失则执行 `sudo npm install -g bash-language-server`，验证 `bash-language-server --version`。
+
+**按勾选安装**（未勾选对应环境则完全不安装，在汇总中标记 ⚠️未选跳过）：
+- 勾选 **Vue**：`sudo npm install -g @vue/language-server @vue/typescript-plugin typescript`
+  （`@vue/typescript-plugin` 依赖 `typescript`），验证 `vue-language-server --version` 与 `tsc --version`；
+- 勾选 **React**：`sudo npm install -g typescript typescript-language-server`
+  （TSX 的 LSP 由 typescript-language-server 承载），验证 `typescript-language-server --version` 与 `tsc --version`；
+- 同时勾选 Vue 与 React 时，`typescript` 只需安装一次；
+- 任一包安装失败按总体要求第 7 条重试后跳过并记录，不中断后续流程。
 
 ## 步骤 3：AI 开发工具（统一用 curl 拉取脚本 + bash 执行，两系通用）
 
@@ -204,7 +248,8 @@ Categories），最后 `update-desktop-database`。仅检测到桌面环境时�
    **[apt]** 使用官方 apt 仓库（download.sublimetext.com 的 apt 源，按官方文档导入 GPG key 后安装 sublime-text）；
    **[dnf]** 使用官方 RPM 仓库
    (`https://download.sublimetext.com/rpm/stable/x86_64/sublime-text.repo`，导入同名 GPG key 后
-   `dnf install -y sublime-text`)。
+   `dnf install -y sublime-text`；注意官方只有 x86_64 仓库，**aarch64 机器上预期失败**，
+   按总体要求第 7 条跳过即可)。
 5. **Dbx**：从 github.com/t8y2/dbx 下载最新版 Linux 桌面端资产——
    **[apt]** 优先 .deb（`sudo apt install ./xxx.deb`）；**[dnf]** 优先 .rpm（`sudo dnf install ./xxx.rpm`）；
    两者都无对应格式时，用 AppImage 放 `~/software/dbx` 并注册 Desktop。
@@ -238,7 +283,7 @@ Categories），最后 `update-desktop-database`。仅检测到桌面环境时�
 - `basedpyright`（Python 静态类型检查 / LSP）随清单一起通过 pip 安装；
   若装进了 `~/venvs/main` 虚拟环境，验证时用该 venv 内的路径（`~/venvs/main/bin/basedpyright --version`），
   可按需创建软链 `ln -sf ~/venvs/main/bin/basedpyright ~/.local/bin/basedpyright` 方便全局调用。
-  注意：ruff 不在本清单中（它走 2.5 的官方脚本安装），不要重复通过 pip 安装。
+  注意：ruff 不在本清单中（它走 2.6 的官方脚本安装），不要重复通过 pip 安装。
 
 ## 步骤 8：Cron 定时任务（两系通用）
 
