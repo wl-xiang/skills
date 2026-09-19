@@ -31,3 +31,13 @@ node_modules/
 # ---- Temp ----
 *.tmp
 *~
+
+# ---- Agents ----
+.workbuddy/
+.codebuddy/
+.traework/
+.trae/
+.traeide/
+.traecode/
+.qoder/
+.vscode/
