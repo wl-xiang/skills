@@ -83,6 +83,13 @@ containerd.io、docker-buildx-plugin、docker-compose-plugin。
 并将 /usr/local/go/bin 加入 PATH（写入 `~/.profile` 或 `/etc/profile.d/go.sh`）。
 验证 `go version`。
 
+### 2.5 Ruff（Python Linter / Formatter）
+
+1. 先 `command -v ruff` 检测，已安装则跳过；
+2. 否则执行官方安装脚本：`curl -LsSf https://astral.sh/ruff/install.sh | sh`；
+3. 脚本默认安装到 `~/.local/bin`（需确认该目录在 PATH 中，通常已默认包含）；
+4. 验证 `ruff --version`。
+
 ## 步骤 3：AI 开发工具（统一用 curl 拉取脚本 + bash 执行）
 
 1. **OpenCode**：先 `command -v opencode` 检测，已安装则跳过；否则执行
@@ -148,6 +155,10 @@ Categories），最后 `update-desktop-database`。仅检测到桌面环境时�
 - 若系统有 PEP 668 限制（externally-managed-environment），**优先创建 `~/venvs/main` 虚拟环境**
   后再安装（需先装 python3-venv）；备选 `pip install --break-system-packages`。
 - pyodbc 需要系统依赖 `unixodbc-dev`；psycopg[binary] 与 fastparquet 依赖预编译轮子，失败时记录日志不中断。
+- `basedpyright`（Python 静态类型检查 / LSP）随清单一起通过 pip 安装；
+  若装进了 `~/venvs/main` 虚拟环境，验证时用该 venv 内的路径（`~/venvs/main/bin/basedpyright --version`），
+  可按需创建软链 `ln -sf ~/venvs/main/bin/basedpyright ~/.local/bin/basedpyright` 方便全局调用。
+  注意：ruff 不在本清单中（它走 2.5 的官方脚本安装），不要重复通过 pip 安装。
 
 ## 步骤 8：Cron 定时任务
 

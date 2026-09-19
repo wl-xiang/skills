@@ -32,3 +32,4 @@ urllib3
 python-docx
 docxtpl
 python-pptx
+basedpyright
