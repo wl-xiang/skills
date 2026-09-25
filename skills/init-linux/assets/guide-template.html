@@ -1,0 +1,156 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>{{TITLE}}</title>
+<style>
+  :root{
+    --bg:#f6f7f9; --card:#ffffff; --fg:#1f2328; --muted:#5b6470;
+    --border:#e3e6ea; --accent:#2563eb; --accent-weak:#eaf0ff;
+    --code-bg:#1e2430; --code-fg:#e6edf3; --ok:#1a7f37; --warn:#9a6700;
+    --radius:10px;
+  }
+  *{box-sizing:border-box}
+  html{scroll-behavior:smooth}
+  body{
+    margin:0; background:var(--bg); color:var(--fg);
+    font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","Noto Sans SC","PingFang SC","Microsoft YaHei",sans-serif;
+    line-height:1.65; font-size:15px;
+  }
+  .wrap{max-width:960px; margin:0 auto; padding:32px 20px 80px}
+  header.top{
+    background:linear-gradient(135deg,#1e3a8a,#2563eb);
+    color:#fff; border-radius:var(--radius); padding:28px 26px; margin-bottom:24px;
+  }
+  header.top h1{margin:0 0 8px; font-size:24px; letter-spacing:.2px}
+  header.top p{margin:0; opacity:.9; font-size:13.5px}
+  .card{
+    background:var(--card); border:1px solid var(--border);
+    border-radius:var(--radius); padding:20px 22px; margin-bottom:18px;
+  }
+  .card h2{
+    margin:0 0 14px; font-size:18px; padding-bottom:10px;
+    border-bottom:1px solid var(--border);
+  }
+  .card h3{margin:20px 0 10px; font-size:15.5px; color:#111}
+  .card h3:first-child{margin-top:0}
+  p{margin:10px 0}
+  ul,ol{margin:10px 0; padding-left:22px}
+  li{margin:4px 0}
+  table{width:100%; border-collapse:collapse; margin:12px 0; font-size:14px}
+  th,td{border:1px solid var(--border); padding:8px 10px; text-align:left; vertical-align:top}
+  th{background:#f2f4f7; font-weight:600}
+  a{color:var(--accent); text-decoration:none; word-break:break-all}
+  a:hover{text-decoration:underline}
+  code.inline{
+    background:#eef1f5; color:#b02a37; padding:1px 6px; border-radius:5px;
+    font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,"Liberation Mono",monospace; font-size:13px;
+  }
+  /* ---- code block with auto-injected copy button ---- */
+  .code-block{position:relative; margin:12px 0}
+  .code-block pre{
+    margin:0; background:var(--code-bg); color:var(--code-fg);
+    padding:16px 16px; border-radius:var(--radius); overflow-x:auto;
+    font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,"Liberation Mono",monospace;
+    font-size:13px; line-height:1.6;
+  }
+  .code-block pre code{white-space:pre; color:inherit; background:none}
+  .copy-btn{
+    position:absolute; top:8px; right:8px; z-index:2;
+    background:rgba(255,255,255,.12); color:#e6edf3; border:1px solid rgba(255,255,255,.25);
+    border-radius:6px; padding:4px 10px; font-size:12px; cursor:pointer;
+    transition:background .15s ease, color .15s ease;
+  }
+  .copy-btn:hover{background:rgba(255,255,255,.24)}
+  .copy-btn.done{background:var(--ok); border-color:var(--ok); color:#fff}
+  .tag{
+    display:inline-block; font-size:12px; padding:1px 8px; border-radius:20px;
+    background:var(--accent-weak); color:var(--accent); margin-right:6px; font-weight:600;
+  }
+  .tag.warn{background:#fff4d6; color:var(--warn)}
+  .note{
+    border-left:3px solid var(--accent); background:var(--accent-weak);
+    padding:10px 14px; border-radius:0 6px 6px 0; margin:12px 0; font-size:13.5px;
+  }
+  .note.warn{border-color:#d4a017; background:#fff8e6}
+  .env-grid{display:grid; grid-template-columns:repeat(auto-fit,minmax(200px,1fr)); gap:10px}
+  .env-item{background:#f8fafc; border:1px solid var(--border); border-radius:8px; padding:10px 12px}
+  .env-item .k{font-size:12px; color:var(--muted)}
+  .env-item .v{font-size:14px; font-weight:600; word-break:break-all}
+  footer.foot{color:var(--muted); font-size:12.5px; text-align:center; margin-top:26px}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <header class="top">
+    <h1>{{TITLE}}</h1>
+    <p>本指南由 init-linux 技能根据本机环境个性化生成 · 生成时间：{{GENERATED_AT}}</p>
+    <p>每条命令均可点击右上角「复制」按钮一键复制，在终端中自行粘贴执行。</p>
+  </header>
+
+  <section class="card">
+    <h2>本机环境摘要</h2>
+    {{ENV_SUMMARY}}
+  </section>
+
+  {{CONTENT}}
+
+  <footer class="foot">按步骤顺序执行即可；需要 sudo 的步骤会在命令前标注。</footer>
+</div>
+
+<script>
+(function () {
+  function copyText(text) {
+    if (navigator.clipboard && window.isSecureContext) {
+      return navigator.clipboard.writeText(text);
+    }
+    return new Promise(function (resolve, reject) {
+      var ta = document.createElement('textarea');
+      ta.value = text;
+      ta.style.position = 'fixed';
+      ta.style.opacity = '0';
+      document.body.appendChild(ta);
+      ta.focus();
+      ta.select();
+      try {
+        document.execCommand('copy') ? resolve() : reject();
+      } catch (e) {
+        reject(e);
+      } finally {
+        document.body.removeChild(ta);
+      }
+    });
+  }
+
+  document.querySelectorAll('pre').forEach(function (pre) {
+    if (pre.parentElement && pre.parentElement.classList.contains('code-block')) return;
+    var wrapper = document.createElement('div');
+    wrapper.className = 'code-block';
+    pre.parentNode.insertBefore(wrapper, pre);
+    wrapper.appendChild(pre);
+
+    var btn = document.createElement('button');
+    btn.className = 'copy-btn';
+    btn.type = 'button';
+    btn.textContent = '复制';
+    btn.addEventListener('click', function () {
+      copyText(pre.innerText).then(function () {
+        btn.textContent = '已复制';
+        btn.classList.add('done');
+        setTimeout(function () {
+          btn.textContent = '复制';
+          btn.classList.remove('done');
+        }, 1500);
+      }).catch(function () {
+        btn.textContent = '复制失败';
+        setTimeout(function () { btn.textContent = '复制'; }, 1500);
+      });
+    });
+    wrapper.appendChild(btn);
+  });
+})();
+</script>
+</body>
+</html>
