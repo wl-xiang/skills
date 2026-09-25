@@ -5,334 +5,326 @@ description: >
   Linux machine, both DEB-based (Debian / Ubuntu / Linux Mint, apt) and
   RPM-based (Fedora / RHEL / CentOS Stream / Rocky / AlmaLinux, dnf or yum),
   e.g. "帮我初始化这台新机器", "一键装机", "init linux", "配置开发环境",
-  "装一遍我的常用工具". It performs an idempotent, logged, resumable full-stack
-  setup: base tools, Python/Node/Docker runtimes, Ruff and bash-language-server,
-  AI CLI tools, Oracle Instant Client, GUI apps with Desktop entries, themes &
-  fonts, Python libraries, a Downloads cron job, and Mint-specific themes.
-  Go / Rust / Vue / React are OPTIONAL components: the skill asks the user to
-  select them (multi-choice) before installing anything, and skips unselected
-  ones, so it also handles requests like "装个 Rust/Go 环境" as part of setup.
-  It should NOT be used for single-package installs or unsupported distros
-  (Arch 等；openSUSE 的 zypper 流程未完整覆盖，仅部分步骤可用).
+  "装一遍我的常用工具". It DOES NOT execute any install / upgrade / sudo command.
+  Instead it (1) runs read-only probes to detect the real machine environment
+  (distro, package manager, CPU arch, desktop, already-installed tools),
+  (2) uses web search to resolve the latest versions and REAL official download
+  links, and (3) generates ONE personalized, copy-ready HTML guide with a
+  per-command copy button, covering base tools, Python/Node/Docker runtimes,
+  Ruff and bash-language-server, AI CLI tools, Oracle Instant Client, GUI apps
+  with Desktop entries, themes & fonts, Python libraries, a Downloads cron job,
+  and Mint-specific themes. Go / Rust / Vue / React are OPTIONAL components:
+  the skill asks the user to select them (multi-choice) and only writes the
+  selected ones into the guide. It should NOT be used for single-package
+  installs or unsupported distros (Arch 等；openSUSE 的 zypper 流程未完整覆盖).
 agent_created: true
 ---
 
-# init-linux — Linux 一键装机（DEB 系 + RPM 系）
+# init-linux — Linux 一键装机（生成可复制的个性化装机指南）
 
-自动化装机助手。用于在全新安装的 Linux 发行版上（DEB 系：Debian / Ubuntu / Linux Mint，基于 apt；
-RPM 系：Fedora / RHEL / CentOS Stream / Rocky / AlmaLinux，基于 dnf，旧版回退 yum），
-一键完成开发环境初始化。
+本技能不再代替用户执行安装命令，而是：**探测本机真实环境 → 联网核实最新版本与真实下载直链 →
+生成一份"可一键复制命令"的个性化 HTML 装机指南**交给用户，由用户自行执行。
 
-## 总体执行要求（每一步都必须遵守）
+## 核心原则（重要变更，必须遵守）
 
-1. **幂等性**：每一步执行前先检测目标是否已存在/已安装，已满足则跳过并记录，严禁重复安装或覆盖用户已有配置。
-2. **健壮性**：所有脚本使用 `set -euo pipefail`；单步失败不中断整体流程，记录到日志文件
-   `~/init-linux-YYYYMMDD.log`（YYYYMMDD 为当天日期），最后输出成功/失败汇总报告。
-3. **权限**：需要 root 的步骤用 sudo；检测到无 sudo 权限时给出明确提示并终止相关步骤。
-4. **版本探测**：所有"取最新版本"的步骤，执行时必须实时查询官方源（GitHub Releases API、官网下载页等）
-   获取最新版本号，禁止写死版本号。GitHub API 访问不通时降级为解析 `releases/latest` 重定向。
-5. **网络**：优先使用官方源；pip 统一使用清华镜像 `-i https://pypi.tuna.tsinghua.edu.cn/simple`。
-6. **验证**：完成后逐项输出验证结果（版本号或安装路径）。
-7. **失败跳过与汇总（硬性要求）**：单个软件/包安装失败时重试最多 3 次（网络类操作单次超时 5 分钟），
-   重试与超时累计仍失败即把该项标记为 ⚠️跳过、记录失败原因，**继续执行后续流程，严禁整体中断**；
-   全部流程结束后，把所有失败/跳过项（含原因与手动修复建议）汇总成 Markdown 报告
-   保存为 `~/init-linux-report-YYYYMMDD.md`，并直接向用户口头说明哪些流程失败。
+1. **禁止代执行**：本技能**不得**执行任何安装 / 升级 / 初始化命令。
+   绝大多数步骤需要 sudo/root，Agent 无法获得权限，强行执行只会卡住。
+   严禁出现：`sudo`、`apt/dnf/yum/zypper install`、`npm install -g`、`pip install`、
+   `usermod`、`systemctl`、写 `/etc`、改 crontab、克隆后运行 `./install.sh` 等命令。
+2. **只读探测**：Agent 只允许执行**只读**命令来采集环境信息（见「允许执行的命令白名单」），
+   不得修改系统状态。
+3. **联网核实**：所有"最新版本号"与"下载链接"必须通过**联网检索（Web Search / 官方 Releases API
+   等）实时核实**得到真实、可访问的官方 URL，**严禁臆造或凭记忆写死链接**。
+4. **唯一产物**：本技能最终交付**一份** HTML 文档（单文件、离线可打开）：
+   - 路径：`~/init-linux-guide-YYYYMMDD.html`（YYYYMMDD 为当天日期）
+   - 每段命令都是一个带「复制」按钮的代码块，用户点一下即可复制到终端执行。
+   - 文档中出现的所有下载链接都必须是核实过的真实直链，用户无需再去自行搜索。
+5. **个性化**：文档内容按探测结果裁剪——只保留命中的包管理器分支（apt 或 dnf），
+   已安装的软件标注"已安装，建议跳过"，未勾选的可选组件直接不写入命令。
 
-## 包管理器适配（全局规则，先于一切安装步骤执行）
+## 允许执行的命令白名单（仅只读）
 
-读取 `/etc/os-release`，根据 ID 与 ID_LIKE 判定包管理器，后续所有安装命令按此分支选用：
+| 目的 | 命令示例 |
+|------|----------|
+| 发行版信息 | `cat /etc/os-release`、`lsb_release -a` |
+| CPU 架构 | `uname -m`、`uname -srv` |
+| 桌面环境 | `echo "$XDG_CURRENT_DESKTOP"`、`echo "$DESKTOP_SESSION"` |
+| 环境变量 | `echo "$PATH"`、`echo "$HOME"` |
+| 已装检测 | `command -v <tool>`、`<tool> --version`、`npm ls -g --depth=0`、`crontab -l` |
+| 目录探测 | `ls -d ~/.local/bin ~/Downloads ~/下载 2>/dev/null`、`xdg-user-dir DOWNLOAD` |
+| 联网只读核实 | `curl -fsSL https://api.github.com/repos/<owner>/<repo>/releases/latest`、`curl -I <URL>`（校验链接存在） |
+
+> 白名单之外的一律不执行；尤其**任何带 `sudo` 或会写盘/改配置的命令**，只能写进 HTML 文档交给用户。
+
+## 工作流程（4 个阶段）
+
+### 阶段 0 — 环境探测（只读）
+
+用白名单命令采集以下信息，作为文档「本机环境摘要」与内容裁剪依据：
+
+- `/etc/os-release`：`ID`、`ID_LIKE`、`VERSION_ID`、`PRETTY_NAME`。
+- 包管理器判定（见下表）。
+- CPU 架构 `uname -m`（区分 x86_64 / aarch64，及用于拼 URL 的资产名映射）。
+- 桌面环境 `$XDG_CURRENT_DESKTOP`（决定是否写入 Desktop 条目、主题类步骤）。
+- 已装情况：`python3 --version`/`python --version`、`node -v`、`docker --version`、
+  `command -v go rustc ruff bash-language-server opencode pi yq fd bat` 等，逐项记录。
+
+包管理器判定表（用于裁剪文档，只输出命中的分支）：
 
 | 判定 | 发行版 | 包管理器 |
 |------|--------|----------|
 | ID 或 ID_LIKE 含 `debian` | Debian / Ubuntu / Linux Mint | `apt` |
-| ID 或 ID_LIKE 含 `fedora` / `rhel` / `centos` / `rocky` / `almalinux` | Fedora / RHEL 系 | `dnf`（检测不到 dnf 时回退 `yum`） |
-| ID 或 ID_LIKE 含 `suse` | openSUSE 系 | `zypper`（仅基础工具可用，第三方仓库步骤需按各官方 openSUSE 文档调整） |
+| ID 或 ID_LIKE 含 `fedora` / `rhel` / `centos` / `rocky` / `almalinux` | Fedora / RHEL 系 | `dnf`（无 dnf 时 `yum`） |
+| ID 或 ID_LIKE 含 `suse` | openSUSE 系 | `zypper`（仅基础工具；第三方源步骤标 ⚠️需手动处理） |
 
-约定：下文用 **[apt]** 与 **[dnf]** 标注两类命令，执行时只运行命中的分支；
-未标注的命令（curl 脚本、git、tar、pip 等）两种发行版通用。
-openSUSE 不在完整支持范围内：基础工具可尝试 zypper，第三方源相关步骤直接标记 ⚠️跳过并记录原因。
+**架构命名映射**（拼下载 URL 时以目标项目实际资产名为准）：
+`uname -m` → Go 用 `amd64/arm64`，yq 用 `x86_64/arm64`，Oracle 用 `x64/arm64`，其余以 Releases 资产列表为准。
 
-## 执行环境信息（执行前先收集）
+### 阶段 1 — 可选组件确认（先与用户交互）
 
-- 读取 `/etc/os-release`，确认发行版 ID、VERSION_ID 与包管理器分支（见上表）。
-- 检测 CPU 架构（`uname -m`，区分 x86_64 / aarch64）。
-  **架构命名映射**：`uname -m` 的输出与各项目发布资产命名不一致，拼下载 URL 前必须以目标项目
-  的实际资产名为准做映射（如 Go 用 `amd64`/`arm64`，yq 用 `x86_64`/`arm64`，Oracle 用 `x64`/`arm64`），
-  并在下载前先校验资产存在（HTTP HEAD 或 Releases API 资产列表），不存在则按总体要求第 7 条跳过。
-- 检测桌面环境是否存在（`$XDG_CURRENT_DESKTOP`），用于决定是否注册 Desktop 条目。
-- **统一前置**：`mkdir -p ~/.local/bin` 并确认该目录在 PATH 中（`echo $PATH` 检测，缺失时
-  在 `~/.profile` 或 `~/.bashrc` 追加 `export PATH="$HOME/.local/bin:$PATH"`，追加前先 grep 防重复）。
-  后续 yq、ruff、fd/bat 软链、basedpyright 软链等都写入此目录。
-
-## 步骤 0：可选组件确认（流程开始前，必须先与用户交互）
-
-**时序**：在完成「包管理器适配」与「执行环境信息」探测之后、任何安装步骤之前执行本步骤；
-展示勾选清单时可附上探测结果（如检测到已装 Go 则在清单中提示）。
-
-以下开发环境为**可选项**，必须在执行任何安装步骤前向用户展示清单并让其勾选（多选）。
-**未勾选的一律不安装**，在最终汇总中标记 ⚠️未选跳过，严禁默认安装：
+在任何内容生成之前，用 AskUserQuestion 让用户**多选**以下可选项，**未勾选的一律不写入文档**：
 
 | 选项 | 内容 | 对应步骤 |
 |------|------|----------|
 | Go | Golang 最新稳定版运行时 | 2.4 |
 | Rust | rustup + rustc/cargo 工具链 | 2.5 |
-| Vue | Vue 3 语言服务（`@vue/language-server`、`@vue/typescript-plugin`，含 `typescript` 依赖） | 2.7 |
+| Vue | Vue 3 语言服务（`@vue/language-server`、`@vue/typescript-plugin`、`typescript`） | 2.7 |
 | React | TypeScript + typescript-language-server（覆盖 TSX 的 LSP） | 2.7 |
 
-说明：
-- `bash-language-server`（2.7 固定部分）与其余所有步骤（含 2.6 Ruff）均为必装/必执行，不受勾选影响；
-- 勾选结果必须记录下来，供步骤 2.4–2.7 与最终汇总使用。
+说明：`bash-language-server`（2.7 固定部分）与其余所有步骤（含 2.6 Ruff）均为必写章节，不受勾选影响。
+展示勾选清单时可附上探测结果（如"检测到已装 Go 1.22"）。
 
-## 步骤 1：系统基础工具
+### 阶段 2 — 联网核实版本与真实下载直链（关键步骤）
 
-- **[apt]**：`sudo apt update` 后
-  `sudo apt install -y vim git curl wget jq ripgrep bat tree zip unzip build-essential openssh-server fd-find`。
-- **[dnf]**：`sudo dnf install -y vim git curl wget jq ripgrep bat tree zip unzip gcc gcc-c++ make openssh-server fd-find`。
+对文档中每一处"下载 / 从官网获取最新版"的地方，**必须联网检索核实后写入真实链接**，
+禁止留空、禁止臆造、禁止让用户自己去搜。至少覆盖：
 
-注意事项：
-- **yq 统一从 GitHub Releases 安装**（mikefarah/yq 的 Go 版二进制，放到 `~/.local/bin` 并 `chmod +x`），
-  不要使用 apt/dnf 源中的 `yq` 包——那是 Python 实现（kislyuk/yq），语法与 Go 版不兼容，两系行为会不一致。
-  下载时按架构命名映射选择 `linux_amd64` / `linux_arm64` 资产。
-- **[apt]** Debian/Ubuntu 上 `fd` 包名是 `fd-find`，`bat` 的二进制名是 `batcat`：安装后建立软链
-  `ln -sf "$(command -v fdfind)" ~/.local/bin/fd` 与 `ln -sf "$(command -v batcat)" ~/.local/bin/bat`。
-  **[dnf]** 源内包名即 `fd` 与 `bat`，二进制名正确，无需软链。
-- `build-essential` 是 apt 包名；dnf 系用 `gcc gcc-c++ make` 等价替代。
-- 启用并启动 SSH 服务：**[apt]** `systemctl enable --now ssh`；**[dnf]** `systemctl enable --now sshd`。
+| 目标 | 需要核实的内容 |
+|------|----------------|
+| Go | 最新 stable 版本号 + `go<版本>.linux-<arch>.tar.gz` 直链（`https://go.dev/dl/`） |
+| yq | 最新版 + `yq_linux_<amd64\|arm64>` 二进制直链（GitHub mikefarah/yq releases） |
+| Node.js | NodeSource 24.x 安装脚本 URL（`https://deb.nodesource.com/setup_24.x` / `https://rpm.nodesource.com/setup_24.x`） |
+| Docker | 对应发行版官方仓库 URL / `docker-ce.repo` URL 与安装文档页 |
+| Ruff | `https://astral.sh/ruff/install.sh` |
+| OpenCode / Pi Agent | 官方安装脚本 URL（`https://opencode.ai/install`、`https://pi.dev/install.sh`） |
+| Oracle Instant Client | `download.oracle.com/otn_software/linux/instantclient/` 下最新 basic / sqlplus 的 Linux zip 直链（按 `linux.x64`/`linux.arm64`），确认免登录可直下 |
+| WindTerm | GitHub kingToolbox/WindTerm 最新 Linux tar.gz 资产直链 |
+| Zed | GitHub zed-industries/zed 最新 Linux tar.gz 资产直链（按架构确认资产存在） |
+| Ghostty | Ubuntu/Debian deb 源安装脚本 URL；Flatpak 包名 `com.mitchellh.ghostty` |
+| Sublime Text | 官方 apt/rpm 仓库配置说明页与 `sublime-text.repo` URL、GPG key URL |
+| Dbx | GitHub t8y2/dbx 最新 .deb/.rpm/AppImage 资产直链 |
+| Maple Mono 字体 | GitHub subframe7536/maple-font 最新 Release 中 `NF-CN` zip 直链 |
+| ayu 主题 / Dracula WindTerm | 仓库地址与安装说明页 |
+| WhiteSur / McMojave（Mint） | 仓库地址 |
 
-## 步骤 2：开发运行时
+要求：
+- 优先用 GitHub Releases API（`/releases/latest`）或官方下载页解析真实资产名；
+- 拼完链接后**用 `curl -I` 校验可访问**（至少校验关键的大文件直链）；不可用则换官方备用链接并在文档中注明；
+- 无法核实到真实直链的项，在文档中标注 ⚠️"请前往官方页面获取"并给出**官方页面 URL**（仍须是核实过的真实网址）。
 
-### 2.1 Python（>= 3.10）
+### 阶段 3 — 生成 HTML 文档
 
-按以下决策树执行：
-1. 分别检测 `python --version` 和 `python3 --version`。
-2. 若已有任一命令指向 >= 3.10 的版本：直接使用系统内置版本，跳过后续安装。
-3. 若只有 `python3` 而没有 `python` 命令：
-   **[apt]** `apt install python-is-python3` 建立映射；
-   **[dnf]** Fedora 缺失时 `sudo dnf install -y python-unversioned-command` 建立映射；
-   RHEL 系无此包时，先 `sudo dnf install -y python3`，再用
-   `sudo alternatives --install /usr/bin/python python /usr/bin/python3 1`
-   注册 alternatives 组后 `sudo alternatives --set python /usr/bin/python3` 建立映射。
-4. 若系统 Python 版本 < 3.10 或完全未安装：
-   - 查询 python.org 确定当前最新的 3.13.x 补丁版本号；
-   - **[apt]** Ubuntu 优先用 deadsnakes PPA（`add-apt-repository ppa:deadsnakes/ppa` 后安装
-     `python3.13 python3.13-venv python3.13-dev`）；Debian 或无 PPA 时，从 python.org 下载源码编译
-     安装到 /usr/local（`./configure --enable-optimizations`）；
-   - **[dnf]** Fedora 一般已满足版本；RHEL/Rocky/Alma 版本过低时优先从 python.org 源码编译
-     （需先 `dnf install -y gcc make openssl-devel bzip2-devel libffi-devel zlib-devel readline-devel sqlite-devel`），
-     备选方案按发行版官方文档启用对应软件集（如 EPEL 提供的新版 python3.x）。
-   - 安装后验证 `python3.13 --version` >= 3.10。
-     **注意**：不要改动系统默认 `python3` 的指向（apt 系的系统工具可能依赖旧版 python3，
-     强切会导致 apt 相关脚本损坏）；步骤 7 及后续用到新解释器时，用 `python3.13` 显式路径，
-     或用 `python3.13 -m venv` 创建虚拟环境承载。
+以本技能捆绑的 `assets/guide-template.html` 为外壳（已内置样式与"自动给每个 `<pre>` 注入复制按钮"的脚本），
+将占位符替换后写出到 `~/init-linux-guide-YYYYMMDD.html`：
 
-### 2.2 Node.js（24.x）
+- `{{TITLE}}` → 如 `Linux 装机指南 · Ubuntu 24.04 (x86_64)`
+- `{{GENERATED_AT}}` → 生成时间
+- `{{ENV_SUMMARY}}` → 环境摘要卡片 HTML（见下方结构）
+- `{{CONTENT}}` → 各步骤 `<section class="card">…</section>`
 
-- **[apt]** 使用 NodeSource 官方脚本：
-  ```bash
-  curl -fsSL https://deb.nodesource.com/setup_24.x | sudo -E bash - && sudo apt install -y nodejs
-  ```
-- **[dnf]** 使用 NodeSource RPM 源：
-  ```bash
-  curl -fsSL https://rpm.nodesource.com/setup_24.x | sudo bash - && sudo dnf install -y nodejs
-  ```
+**文档结构要求**：
 
-验证 `node -v` 主版本为 24。
+1. **本机环境摘要**：用一个 `.env-grid` 展示发行版/版本、包管理器分支、CPU 架构、桌面环境、
+   已装关键组件；必要时附 `table`。
+2. **按步骤组织**（对应下文「步骤内容」1–10）：每步一个 `<section class="card">`，
+   含：步骤标题 `<h2>`、简短说明、命令代码块、验证命令、需要的下载链接（真实 URL）。
+3. **代码块写法**：只用标准 `<pre><code>…</code></pre>`，模板脚本会**自动**为每个 `pre`
+   生成右上角「复制」按钮，无需手写按钮；命令中的 `<`、`>`、`&` 需转义。
+4. **命令标注**：需要 sudo 的命令保持命令原样书写（用户执行时自行加/带 sudo），
+   并在步骤说明中提示该步需要 sudo 权限。
+5. **予以提示的风险**：如 `usermod -aG docker` 后需重新登录、
+   `rm -rf /usr/local/go` 属官方升级方式、`source ~/.bashrc` 生效范围等。
+6. **裁剪规则**：只写命中的包管理器分支命令；已安装项加 `<span class="tag warn">已安装，建议跳过</span>`；
+   未勾选的可选组件整段省略（可在摘要中一句话说明"未选择的路由：…"）。
+7. **单文件、离线可用**：CSS/JS 全部内联，不引用任何外部资源（字体、CDN 均不用）。
 
-### 2.3 Docker 与 Docker Compose
+## 步骤内容（写入 HTML 的章节清单）
 
-按 Docker 官方文档添加对应发行版的官方仓库：
+> 下方为每个步骤应写入文档的内容。代码块中标注 **[apt]** / **[dnf]** 的，
+> 只写当前机器命中的那一支；未标注的两种发行版通用。
 
-- **[apt]**（download.docker.com/linux/ubuntu 或 /debian）：安装 docker-ce、docker-ce-cli、
-  containerd.io、docker-buildx-plugin、docker-compose-plugin。
-- **[dnf]** 仓库 URL 按发行版选择：Fedora → `download.docker.com/linux/fedora`，
-  CentOS/Rocky/Alma → `download.docker.com/linux/centos`，RHEL → `download.docker.com/linux/rhel`。
-  添加仓库时先检测 dnf 主版本：
-  - dnf5（Fedora 41+ 默认）：`sudo dnf config-manager addrepo --from-repofile=<docker-ce.repo 的 URL>`；
-  - dnf4（旧版 Fedora/RHEL 系）：`sudo dnf install -y dnf-plugins-core` 后
-    `sudo dnf config-manager --add-repo <docker-ce.repo 的 URL>`。
-  然后 `sudo dnf install -y docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin`。
+### 步骤 1：系统基础工具
 
-安装后（两系通用）：将当前用户加入 docker 组（`sudo usermod -aG docker $USER`，提醒需重新登录生效），
-启用并启动 docker 服务。验证 `docker --version` 与 `docker compose version`。
+- **[apt]**：先 `sudo apt update`，再
+  `sudo apt install -y vim git curl wget jq ripgrep bat tree zip unzip build-essential openssh-server fd-find`
+- **[dnf]**：
+  `sudo dnf install -y vim git curl wget jq ripgrep bat tree zip unzip gcc gcc-c++ make openssh-server fd-find`
 
-### 2.4 Golang（最新稳定版，可选 — 仅当用户在步骤 0 勾选 Go 时执行，否则跳过并记录）
+要点（写入文档的注意事项）：
+- **yq 从 GitHub Releases 安装**（mikefarah/yq 的 Go 版二进制，放入 `~/.local/bin` 并 `chmod +x`）；
+  不用 apt/dnf 源里的 `yq`（那是 Python 版 kislyuk/yq，语法不兼容）。链接须在阶段 2 核实。
+- **[apt]** `fd` 包名是 `fd-find`、`bat` 二进制名为 `batcat`，需软链：
+  `ln -sf "$(command -v fdfind)" ~/.local/bin/fd`、`ln -sf "$(command -v batcat)" ~/.local/bin/bat`；
+  **[dnf]** 包名与二进制名即 `fd`/`bat`，无需软链。
+- 启用 SSH：**[apt]** `sudo systemctl enable --now ssh`；**[dnf]** `sudo systemctl enable --now sshd`。
+- 前置：`mkdir -p ~/.local/bin`，并确认其在 PATH 中。
 
-查询 `https://go.dev/dl/?mode=json` 获取最新 stable 版本号，
-下载 `go<版本>.linux-<arch>.tar.gz`（`<arch>` 按架构命名映射取 `amd64`/`arm64`），
-解压到 /usr/local/go：**若 `/usr/local/go` 已存在，先 `sudo rm -rf /usr/local/go` 删除旧版再解压**
-（官方推荐的升级方式，避免新旧文件混杂；此为运行时目录，不受"严禁覆盖用户配置"约束）。
-并将 /usr/local/go/bin 加入 PATH（写入 `~/.profile` 或 `/etc/profile.d/go.sh`），
-写入前先 grep 检测是否已存在该 PATH 条目，避免重复追加。
-验证 `go version`。（两系通用，无包管理器差异。）
+### 步骤 2：开发运行时
 
-### 2.5 Rust（可选 — 仅当用户在步骤 0 勾选 Rust 时执行，否则跳过并记录）
+**2.1 Python（>= 3.10）** —— 按探测结果给出对应命令：
+- 若已有 >= 3.10：写"已满足，跳过"，不写安装命令。
+- 若只有 `python3` 无 `python`：**[apt]** `sudo apt install -y python-is-python3`；
+  **[dnf]** `sudo dnf install -y python-unversioned-command`；
+  RHEL 系无该包时：`sudo dnf install -y python3` 后
+  `sudo alternatives --install /usr/bin/python python /usr/bin/python3 1`、
+  `sudo alternatives --set python /usr/bin/python3`。
+- 若版本 < 3.10 或未安装：
+  **[apt]** Ubuntu 用 deadsnakes PPA（`sudo add-apt-repository ppa:deadsnakes/ppa` 后装
+  `python3.13 python3.13-venv python3.13-dev`）；Debian 或无 PPA 时从 python.org 源码编译；
+  **[dnf]** RHEL 系源码编译前先装
+  `sudo dnf install -y gcc make openssl-devel bzip2-devel libffi-devel zlib-devel readline-devel sqlite-devel`。
+  源码编译需给出 python.org 当前最新 3.13.x 的**真实下载直链**（阶段 2 核实）。
+- 提示：不要改动系统默认 `python3` 指向（apt 系系统工具可能依赖旧版）。
 
-1. 先 `command -v rustc` 检测，已安装则跳过；
-2. 执行 rustup 官方脚本静默安装：
-   `curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y`；
-3. 安装后 `source "$HOME/.cargo/env"`（脚本会自动把 `~/.cargo/bin` 写入环境文件）；
-4. 验证 `rustc --version` 与 `cargo --version`。（两系通用。）
+**2.2 Node.js（24.x）**：
+- **[apt]** `curl -fsSL https://deb.nodesource.com/setup_24.x | sudo -E bash - && sudo apt install -y nodejs`
+- **[dnf]** `curl -fsSL https://rpm.nodesource.com/setup_24.x | sudo bash - && sudo dnf install -y nodejs`
+- 验证：`node -v`（主版本 24）。
 
-### 2.6 Ruff（Python Linter / Formatter，必装）
+**2.3 Docker 与 Docker Compose**：按官方文档添加对应发行版官方仓库。
+- **[apt]**（`download.docker.com/linux/ubuntu` 或 `/debian`）安装
+  `docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin`。
+- **[dnf]** 仓库 URL 按发行版：Fedora → `/linux/fedora`，CentOS/Rocky/Alma → `/linux/centos`，
+  RHEL → `/linux/rhel`；先判断 dnf 主版本：
+  dnf5 → `sudo dnf config-manager addrepo --from-repofile=<docker-ce.repo URL>`；
+  dnf4 → `sudo dnf install -y dnf-plugins-core` 后 `sudo dnf config-manager --add-repo <URL>`。
+- 安装后：`sudo usermod -aG docker $USER`（提示需重新登录生效）、
+  `sudo systemctl enable --now docker`；验证 `docker --version`、`docker compose version`。
 
-1. 先 `command -v ruff` 检测，已安装则跳过；
-2. 否则执行官方安装脚本：`curl -LsSf https://astral.sh/ruff/install.sh | sh`；
-3. 脚本默认安装到 `~/.local/bin`（需确认该目录在 PATH 中，通常已默认包含）；
-4. 验证 `ruff --version`。（两系通用。）
+**2.4 Golang（可选，仅勾选时写入）**：
+从 go.dev 下载最新 stable 的 `go<版本>.linux-<arch>.tar.gz`（**真实直链**，阶段 2 核实），
+`sudo rm -rf /usr/local/go`（官方升级方式，先备份可有可无）、
+`sudo tar -C /usr/local -xzf …`；并把 `/usr/local/go/bin` 加入 PATH（先 grep 防重复）。
 
-### 2.7 全局 NPM 工具（LSP / 前端开发，两系通用）
+**2.5 Rust（可选，仅勾选时写入）**：
+`command -v rustc` 检测后，`curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y`，
+安装后 `source "$HOME/.cargo/env"`，验证 `rustc --version`、`cargo --version`。
 
-**固定安装**（不受步骤 0 勾选影响）：
-1. 先 `npm ls -g --depth=0` 查看已装的全局包，`bash-language-server` 已存在则跳过；
-2. 缺失则执行 `sudo npm install -g bash-language-server`，验证 `bash-language-server --version`。
+**2.6 Ruff（必写）**：`curl -LsSf https://astral.sh/ruff/install.sh | sh`，验证 `ruff --version`。
 
-**按勾选安装**（未勾选对应环境则完全不安装，在汇总中标记 ⚠️未选跳过）：
-- 勾选 **Vue**：`sudo npm install -g @vue/language-server @vue/typescript-plugin typescript`
-  （`@vue/typescript-plugin` 依赖 `typescript`），验证 `vue-language-server --version` 与 `tsc --version`；
-- 勾选 **React**：`sudo npm install -g typescript typescript-language-server`
-  （TSX 的 LSP 由 typescript-language-server 承载），验证 `typescript-language-server --version` 与 `tsc --version`；
-- 同时勾选 Vue 与 React 时，`typescript` 只需安装一次；
-- 任一包安装失败按总体要求第 7 条重试后跳过并记录，不中断后续流程。
+**2.7 全局 NPM 工具**：
+- 固定：`sudo npm install -g bash-language-server`，验证 `bash-language-server --version`。
+- 勾选 Vue：`sudo npm install -g @vue/language-server @vue/typescript-plugin typescript`；
+- 勾选 React：`sudo npm install -g typescript typescript-language-server`；
+- 同时勾选时 `typescript` 只装一次。
 
-## 步骤 3：AI 开发工具（统一用 curl 拉取脚本 + bash 执行，两系通用）
+### 步骤 3：AI 开发工具
+- **OpenCode**：`curl -fsSL https://opencode.ai/install | bash`（`command -v opencode` 检测）。
+- **Pi Agent**：`curl -fsSL https://pi.dev/install.sh | sh`（备选 `sudo npm install -g @earendil-works/pi-coding-agent`）。
 
-1. **OpenCode**：先 `command -v opencode` 检测，已安装则跳过；否则执行
-   `curl -fsSL https://opencode.ai/install | bash`。
-2. **Pi Agent**：先 `command -v pi` 检测，已安装则跳过；否则执行
-   `curl -fsSL https://pi.dev/install.sh | sh`（备选：`npm install -g @earendil-works/pi-coding-agent`）。
+### 步骤 4：Oracle Instant Client（供 python-oracledb thick 模式）
+zip 包方式（两系通用）：
+1. 下载最新 instantclient-basic 与 instantclient-sqlplus 的 Linux zip（按架构 `linux.x64`/`linux.arm64`，
+   **真实直链**，阶段 2 核实；免登录可直下）。
+2. 解压到 `/opt/oracle/instantclient_<版本>`，软链 `/opt/oracle/instantclient`。
+3. `echo /opt/oracle/instantclient | sudo tee /etc/ld.so.conf.d/oracle-instantclient.conf` 后 `sudo ldconfig`。
+4. 环境变量（写入 `/etc/profile.d/oracle-instantclient.sh`，并追加到 `~/.bashrc`，先 grep 防重复）：
+   ```bash
+   export ORACLE_HOME=/opt/oracle/instantclient
+   export LD_LIBRARY_PATH=$ORACLE_HOME:$LD_LIBRARY_PATH
+   ```
+5. 依赖：**[apt]** `sudo apt install -y libaio1`（或 `libaio1t64`）；**[dnf]** `sudo dnf install -y libaio`。
+6. 验证：`python3 -c "import oracledb; oracledb.init_oracle_client(); print(oracledb.clientversion())"`
+   （若用 venv 则用该 venv 的解释器路径）。
 
-## 步骤 4：Oracle Instant Client（供 python-oracledb thick 模式使用）
+### 步骤 5：应用软件
+统一安装到 `~/software/<软件名>/`；有 GUI 的注册 Desktop 条目
+（`~/.local/share/applications/<name>.desktop`：Name/Exec/Icon/Type=Application/Categories），
+最后 `update-desktop-database`（属 `desktop-file-utils` 包）。仅探测到桌面环境时写入此段。
 
-优先使用 zip 包方式（两系通用，避免 rpm/deb 包格式差异）：
-
-1. 从 Oracle 官网（download.oracle.com/otn_software/linux/instantclient/）查询并下载
-   当前最新版 instantclient-basic 与 instantclient-sqlplus 的 Linux zip 包
-   （按执行环境检测到的 CPU 架构选择 `linux.x64` 或 `linux.arm64` 资产，直链可直接 wget，无需登录）。
-2. 解压到 `/opt/oracle/instantclient_<版本>`，并创建软链 `/opt/oracle/instantclient` 指向它。
-3. 配置动态链接：向 `/etc/ld.so.conf.d/oracle-instantclient.conf` 写入 `/opt/oracle/instantclient`，执行 `sudo ldconfig`。
-4. 设置环境变量（两者都要）：
-   - 创建 `/etc/profile.d/oracle-instantclient.sh`，内容：
-     ```bash
-     export ORACLE_HOME=/opt/oracle/instantclient
-     export LD_LIBRARY_PATH=$ORACLE_HOME:$LD_LIBRARY_PATH
-     ```
-   - 同时追加同样的两行 export 到 `~/.bashrc` 末尾（追加前先 grep 检测是否已存在，避免重复写入）。
-5. 安装 libaio 系统依赖：**[apt]** `libaio1`（或 libaio1t64，视发行版而定）；**[dnf]** `libaio`。
-6. 验证（在步骤 7 的 pip 安装之后执行，**必须使用步骤 7 实际使用的解释器**：
-   步骤 7 走了 `~/venvs/main` 虚拟环境时用 `~/venvs/main/bin/python`，否则用系统 `python3`）：
-   `<解释器> -c "import oracledb; oracledb.init_oracle_client(); print(oracledb.clientversion())"`
-
-## 步骤 5：应用软件
-
-统一安装到 `~/software/<软件名>/`，并为有 GUI 的软件注册 Desktop 条目
-（`~/.local/share/applications/<name>.desktop`，含 Name、Exec、Icon、Type=Application、
-Categories），最后 `update-desktop-database`。仅检测到桌面环境时执行 Desktop 注册；
-`update-desktop-database` 属 `desktop-file-utils` 包（两系同名），缺失时先用包管理器安装，
-装不上则跳过刷新（Desktop 条目通常仍会生效），按总体要求第 7 条记录。
-
-通用规则：每个软件建独立子目录；从 GitHub Releases API 获取最新版本及对应架构的资产下载 URL；
-下载前先校验目标架构的资产在 Releases 中确实存在（Zed 等项目已提供 ARM64 构建，仍需按实际资产列表确认），
-不存在则按总体要求第 7 条跳过并记录，不得报错中断。
-
-1. **WindTerm**：从 github.com/kingToolbox/WindTerm 下载最新 Linux 版（.tar.gz，两系通用），
-   解压到 `~/software/windterm`，注册 Desktop（图标取其安装目录内的 png）。
-2. **Zed**：从 github.com/zed-industries/zed 下载最新 Linux 版（.tar.gz，两系通用），
-   解压到 `~/software/zed`，注册 Desktop。
+1. **WindTerm**：下载 GitHub kingToolbox/WindTerm 最新 Linux `.tar.gz`（真实直链），解压到 `~/software/windterm`，注册 Desktop（图标取安装目录内 png）。
+2. **Zed**：下载 GitHub zed-industries/zed 最新 Linux `.tar.gz`（真实直链，按架构确认资产存在），解压到 `~/software/zed`，注册 Desktop。
 3. **Ghostty**：
-   **[apt]**（Ubuntu/Debian；Mint 属 apt 分支但该脚本按 Ubuntu 版本检测，失败属预期，
-   按总体要求第 7 条跳过即可）执行社区 deb 源安装脚本
+   **[apt]**（Ubuntu/Debian；Mint 亦属 apt 分支但脚本按 Ubuntu 版本检测，失败属预期）
    `/bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/mkasberg/ghostty-ubuntu/HEAD/install.sh)"`；
-   **[dnf]** 无官方 RPM 仓库：优先尝试 Flatpak（`flatpak install flathub com.mitchellh.ghostty`，
-   未装 flatpak 时先安装并添加 flathub 远程源），失败则记录日志标记跳过。
-4. **Sublime Text**：添加官方仓库后安装——
-   **[apt]** 使用官方 apt 仓库（download.sublimetext.com 的 apt 源，按官方文档导入 GPG key 后安装 sublime-text）；
-   **[dnf]** 使用官方 RPM 仓库
-   (`https://download.sublimetext.com/rpm/stable/x86_64/sublime-text.repo`，导入同名 GPG key 后
-   `dnf install -y sublime-text`；注意官方只有 x86_64 仓库，**aarch64 机器上预期失败**，
-   按总体要求第 7 条跳过即可)。
-5. **Dbx**：从 github.com/t8y2/dbx 下载最新版 Linux 桌面端资产——
-   **[apt]** 优先 .deb（`sudo apt install ./xxx.deb`）；**[dnf]** 优先 .rpm（`sudo dnf install ./xxx.rpm`）；
-   两者都无对应格式时，用 AppImage 放 `~/software/dbx` 并注册 Desktop。
+   **[dnf]** 优先 Flatpak：`flatpak install flathub com.mitchellh.ghostty`（未装 flatpak 时先安装并加 flathub 源）。
+4. **Sublime Text**：
+   **[apt]** 按官方文档导入 GPG key 并添加 apt 仓库后 `sudo apt install -y sublime-text`；
+   **[dnf]** 添加 `https://download.sublimetext.com/rpm/stable/x86_64/sublime-text.repo` 并导入同名 GPG key 后
+   `sudo dnf install -y sublime-text`（官方仅 x86_64，**aarch64 机器标注"预期不支持"**）。
+   文档中须给出官方仓库配置说明页的真实 URL。
+5. **Dbx**：下载 GitHub t8y2/dbx 最新资产——**[apt]** 优先 `.deb`（`sudo apt install ./xxx.deb`）；
+   **[dnf]** 优先 `.rpm`（`sudo dnf install ./xxx.rpm`）；均无则用 AppImage 放 `~/software/dbx` 并注册 Desktop。
 
-## 步骤 6：主题与字体（两系通用）
+### 步骤 6：主题与字体（两系通用）
+1. **Sublime Text Ayu 主题**：`git clone https://github.com/dempfi/ayu` 到
+   `~/.config/sublime-text/Packages/ayu`（先 `mkdir -p`），按其 README 在
+   `Preferences.sublime-settings` 启用 dark 方案。
+2. **Maple Mono 字体（NF CN 变体）**：下载 GitHub subframe7536/maple-font 最新 Release 中名称含
+   `NF-CN` 的 zip（**真实直链**），解压取 `.ttf/.otf/.ttc` 到 `~/.local/share/fonts/maple-mono/`，
+   `fc-cache -fv`，`fc-list` 验证。
+3. **WindTerm Dracula 主题**：参照 `https://draculatheme.com/windterm` 说明，
+   从 github.com/dracula/windterm 下载主题文件，放入 WindTerm 的 `global/themes` 目录并按说明启用。
 
-1. **Sublime Text Ayu 主题**：`git clone https://github.com/dempfi/ayu` 到 Sublime 的 Packages 目录
-   （`~/.config/sublime-text/Packages/ayu`，目录不存在则先创建），
-   并按 ayu 官方 README 说明在 Preferences.sublime-settings 中启用 ayu 配色（dark 方案）。
-2. **Maple Mono 字体（NF CN 变体）**：从 github.com/subframe7536/maple-font 的 Releases 下载
-   名称含 "NF-CN" 的 zip 包（hinted/unhinted 任选其一），解压后仅取其中的 .ttf/.otf/.ttc 字体文件
-   复制到 `~/.local/share/fonts/maple-mono/`，执行 `fc-cache -fv`，并用 `fc-list` 验证安装成功。
-3. **WindTerm Dracula 主题**：参照 https://draculatheme.com/windterm 的安装说明，
-   从 github.com/dracula/windterm 下载主题文件，放入 WindTerm 安装目录下对应的 global/themes 目录，
-   并按说明修改 WindTerm 的 profile/theme 配置使其生效。
+### 步骤 7：Python 库（清华源）
+用 >= 3.10 的解释器：
+`pip install -r <清单> -i https://pypi.tuna.tsinghua.edu.cn/simple`。
+- 依赖清单：**把本技能捆绑的 `scripts/requirements.txt` 内容原样作为代码块写入文档**
+  （用户可一键复制成文件或直接 `pip install … -i …` 逐项安装）。
+- 若遇 PEP 668（externally-managed-environment）：优先建 venv `python3 -m venv ~/venvs/main` 后安装
+  （**[apt]** 需先 `sudo apt install -y python3-venv`），备选 `--break-system-packages`。
+- pyodbc 系统依赖：**[apt]** `sudo apt install -y unixodbc-dev`；**[dnf]** `sudo dnf install -y unixODBC-devel`。
+- `basedpyright` 随清单安装，可软链 `ln -sf ~/venvs/main/bin/basedpyright ~/.local/bin/basedpyright`。
+- 注意：ruff 不在本清单中（走 2.6），不要重复通过 pip 安装。
 
-## 步骤 7：Python 库（清华源）
+### 步骤 8：Cron 定时任务（两系通用）
+1. cron 前置：**[apt]** `sudo apt install -y cron && sudo systemctl enable --now cron`；
+   **[dnf]** `sudo dnf install -y cronie && sudo systemctl enable --now crond`。
+2. `mkdir -p ~/Desktop/Scripts ~/download-history`。
+3. **把本技能捆绑的 `scripts/move-download.sh` 内容原样作为代码块写入文档**，
+   并给出创建命令（`cat > ~/Desktop/Scripts/move-download.sh <<'EOF' … EOF` 或提示用户用编辑器粘贴后
+   `chmod +x ~/Desktop/Scripts/move-download.sh`）。下载目录探测已内置（`xdg-user-dir DOWNLOAD` + 回退）。
+4. 注册 crontab（先 `crontab -l` 检查避免重复）：
+   ```
+   0 1 * * * "$HOME/Desktop/Scripts/move-download.sh" >> "$HOME/Desktop/Scripts/move-download.log" 2>&1
+   ```
 
-用步骤 2.1 确认可用的 Python（>= 3.10）执行：优先用新装的显式解释器（如 `python3.13`），
-否则用系统 `python3`。依赖清单直接使用本技能捆绑的 `scripts/requirements.txt`
-（`pip install -r <技能目录>/scripts/requirements.txt`），无需复制到临时文件。
+### 步骤 9：Mint 专属（仅当 ID/ID_LIKE 含 linuxmint 时写入）
+1. **WhiteSur GTK 主题**：`git clone https://github.com/vinceliuice/WhiteSur-gtk-theme` 后按其 README 运行 `./install.sh`（需 sassc 等依赖先装）。
+2. **McMojave-circle 图标**：`git clone https://github.com/vinceliuice/McMojave-circle` 后运行 install.sh，
+   或手动复制图标目录到 `~/.icons/`，再
+   `gsettings set org.cinnamon.desktop.interface icon-theme McMojave-circle`。
 
-注意事项：
-- 统一加清华镜像 `-i https://pypi.tuna.tsinghua.edu.cn/simple`。
-- 若系统有 PEP 668 限制（externally-managed-environment，apt 与 dnf 两系均可能强制启用），
-  **优先创建 `~/venvs/main` 虚拟环境**后再安装
-  （**[apt]** 需先装 python3-venv；**[dnf]** venv 内置于 python3，无需额外包）；
-  备选 `pip install --break-system-packages`。
-- pyodbc 需要系统 ODBC 依赖：**[apt]** `unixodbc-dev`；**[dnf]** `unixODBC-devel`。
-- psycopg[binary] 与 fastparquet 依赖预编译轮子，失败时记录日志不中断。
-- `basedpyright`（Python 静态类型检查 / LSP）随清单一起通过 pip 安装；
-  若装进了 `~/venvs/main` 虚拟环境，验证时用该 venv 内的路径（`~/venvs/main/bin/basedpyright --version`），
-  可按需创建软链 `ln -sf ~/venvs/main/bin/basedpyright ~/.local/bin/basedpyright` 方便全局调用。
-  注意：ruff 不在本清单中（它走 2.6 的官方脚本安装），不要重复通过 pip 安装。
-
-## 步骤 8：Cron 定时任务（两系通用）
-
-0. 前置检测：`command -v crontab` 检测 cron 是否可用；**[apt]** 缺失时 `sudo apt install -y cron`
-   并 `systemctl enable --now cron`；**[dnf]** 缺失时 `sudo dnf install -y cronie`
-   并 `systemctl enable --now crond`。
-1. `mkdir -p ~/Desktop/Scripts ~/download-history`。
-2. **探测下载目录**：目录名随系统默认语言而异（英文为 `~/Downloads`，中文系统为 `~/下载`）。
-   优先用 `xdg-user-dir DOWNLOAD` 获取实际路径（xdg-user-dirs 未安装时用系统包管理器安装它）；
-   探测失败时依次回退检测 `~/Downloads`、`~/下载`。
-3. 安装 `~/Desktop/Scripts/move-download.sh`（内容见本技能捆绑的 `scripts/move-download.sh`，
-   已内置 xdg-user-dir 探测与回退逻辑；复制过去并 `chmod +x`；若目标已存在则跳过，严禁覆盖用户修改）。
-4. 注册到当前用户 crontab（先 `crontab -l` 检查是否已有相同条目，避免重复添加）：
-
-```
-0 1 * * * "$HOME/Desktop/Scripts/move-download.sh" >> "$HOME/Desktop/Scripts/move-download.log" 2>&1
-```
-
-## 步骤 9：Mint 专属（仅当 /etc/os-release 的 ID 或 ID_LIKE 包含 linuxmint 时执行）
-
-1. **WhiteSur GTK 主题**：`git clone https://github.com/vinceliuice/WhiteSur-gtk-theme` 后按其 README
-   运行 `./install.sh`（默认安装到 ~/.themes），需要 sassc 等依赖则先 apt 安装。
-2. **McMojave-circle 图标**：`git clone https://github.com/vinceliuice/McMojave-circle` 后运行其 install.sh，
-   或手动将图标主题目录复制到 `~/.icons/`，然后
-   `gsettings set org.cinnamon.desktop.interface icon-theme McMojave-circle`
-   （或用 mint-themes 工具）设置为 McMojave-circle。
-
-## 步骤 10：常用 Alias（写入 ~/.bashrc，两系通用）
-
-将以下别名追加到 `~/.bashrc` **末尾**。追加前先逐条 `grep -q` 检测（如 `grep -q "alias oc=" ~/.bashrc`），
-已存在的条目跳过，严禁重复写入：
-
+### 步骤 10：常用 Alias（写入 `~/.bashrc`）
+给出追加命令（注意 alias 值末尾空格有意保留），并提示 `source ~/.bashrc`：
 ```bash
 alias oc='opencode '
 alias dk='docker '
 alias dc='docker compose'
 alias fh='free -h'
 ```
+写入文档时用"追加到 ~/.bashrc 末尾、先 grep 防重复"的完整命令块。
 
-追加完成后执行 `source ~/.bashrc` 使其在当前会话生效，并提醒用户：新开的终端会自动加载；
-注意 alias 值末尾的空格是有意保留的（便于 `oc`/`dk` 后直接接参数），写入时不要丢失。
+## 交付与自查
 
-## 输出要求
-
-全部步骤完成后输出结构化汇总：每步骤状态（✅成功 / ⚠️跳过 / ❌失败）、命中的包管理器分支、
-关键版本号或安装路径；对失败的步骤给出失败原因和手动修复建议。
+完成后：
+1. 输出文档保存路径，并用 `computer://` 链接交付：`[装机指南](computer:///home/<user>/init-linux-guide-YYYYMMDD.html)`
+   （用探测到的实际 `$HOME` 拼绝对路径）。
+2. 口头简述：命中的发行版/包管理器分支、勾选了哪些可选组件、哪些步骤需要 sudo、
+   哪些链接/资产未能核实为直链（已改为官方页面）。
+3. **交付前自查清单**（逐项确认）：
+   - [ ] 未执行任何安装/sudo 命令，仅做了只读探测；
+   - [ ] 文档为单文件、离线可打开，CSS/JS 全内联；
+   - [ ] 每个命令代码块都能出现「复制」按钮（标准 `<pre><code>` 即可，脚本自动注入）；
+   - [ ] 只出现命中的包管理器分支命令；
+   - [ ] 下载链接均为联网核实过的真实 URL，无臆造、无占位符；
+   - [ ] 未勾选的可选组件未写入命令；
+   - [ ] 提示了需 sudo / 需重新登录 / 需重启终端等事项。
 
 ## 捆绑资源
 
-- `scripts/requirements.txt` — 步骤 7 的 Python 依赖清单，直接复制到目标机后 `pip install -r`。
-- `scripts/move-download.sh` — 步骤 8 的下载目录归档脚本（自动适配 Downloads/"下载" 目录名），
-  直接复制到 `~/Desktop/Scripts/`。
+- `assets/guide-template.html` — HTML 外壳模板（内置样式 + 自动注入复制按钮的脚本）。
+  复制该文件，替换 `{{TITLE}}`、`{{GENERATED_AT}}`、`{{ENV_SUMMARY}}`、`{{CONTENT}}` 占位符，
+  写出到 `~/init-linux-guide-YYYYMMDD.html`。
+- `scripts/requirements.txt` — 步骤 7 的 Python 依赖清单，**内容需原样嵌入 HTML 文档**（代码块）。
+- `scripts/move-download.sh` — 步骤 8 的下载目录归档脚本，**内容需原样嵌入 HTML 文档**（代码块）。
