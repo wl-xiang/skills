@@ -7,7 +7,7 @@
 #   <repo_name>_<x64|arm>_source-code.tgz     (source, excludes .git and node_modules)
 # and prints their sizes + sha256sum.
 #
-# Designed to be called by the repo-deploy-packager skill Phase 3. Pass --arch from
+# Designed to be called by the ship-repo-offline skill Phase 3. Pass --arch from
 # the target deployment architecture determined in Phase 0 (amd64/x86_64 -> x64,
 # arm64/aarch64 -> arm). Defaults to the build machine's arch when omitted.
 set -euo pipefail

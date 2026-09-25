@@ -1,10 +1,10 @@
 ---
-name: repo-deploy-packager
+name: ship-repo-offline
 description: This skill should be used when the user wants to deploy a GitHub/Git repository via Docker Compose and package the deployment into offline-restoreable TGZ archives (Docker image(s) plus source code) with SHA256 checksums. It encodes a strict 5-phase SOP (environment/arch detection then clone then compose deploy then pack then acceptance), enforces fixed workspace conventions (repos/, results/repo_name/, logs/ with repo_name_ prefixed files), and prompts for cleanup after packaging. Use it for any "deploy and package a repo URL" request.
 agent_created: true
 ---
 
-# Repo Deploy & Packager
+# Ship Repo Offline
 
 Deploy any Git repository via Docker Compose, then package the result (built image(s)
 plus source code) into verifiable TGZ archives following a fixed workspace layout.
@@ -152,9 +152,9 @@ only on explicit confirmation.
 
 - `scripts/pack.sh` — Phase 3 packaging (save images + tar source + sha256; names files
   `<repo_name>_<x64|arm>_docker-images.tgz` / `..._source-code.tgz`). Run from the
-  workspace root: `bash skills/repo-deploy-packager/scripts/pack.sh <repo> <compose_dir> [--arch <x64|arm>] [--profile <p>]`.
+  workspace root: `bash skills/ship-repo-offline/scripts/pack.sh <repo> <compose_dir> [--arch <x64|arm>] [--profile <p>]`.
 - `scripts/verify.sh` — Phase 4 restore/extract verification. Run from the workspace root:
-  `bash skills/repo-deploy-packager/scripts/verify.sh <repo> [--arch <x64|arm>]`.
+  `bash skills/ship-repo-offline/scripts/verify.sh <repo> [--arch <x64|arm>]`.
 - `scripts/setup-docker-mirror.sh` — **Manual-only** Docker Hub mirror acceleration for
   China / slow pulls. Presents the one-click `linuxmirrors.cn` config; never auto-run
   (uses `sudo`). See `references/docker-mirror.md`.

@@ -23,7 +23,7 @@ skills-repo/
 
 | Skill | 说明 |
 |-------|------|
-| `repo-deploy-packager` | 通过 Docker Compose 部署任意 Git 仓库，并把构建出的镜像 + 源码打包成可离线还原的 TGZ 归档（带 SHA256 校验）。固定 5 阶段 SOP 与目录/命名规范。 |
+| `ship-repo-offline` | 通过 Docker Compose 部署任意 Git 仓库，并把构建出的镜像 + 源码打包成可离线还原的 TGZ 归档（带 SHA256 校验）。固定 5 阶段 SOP 与目录/命名规范。 |
 | `init-linux` | Linux 装机指南生成器（DEB 系 + RPM 系）。**不代替用户执行安装命令**（因多数步骤需 sudo，Agent 无法获取会卡住），改为：只读探测本机真实环境（发行版/包管理器/架构/桌面/已装组件）→ 联网核实最新版本与真实官方下载直链 → 生成一份单文件、离线可打开的个性化 HTML 装机指南，每个命令代码块自带「复制」按钮，用户一键复制即可执行，无需自行搜索链接。覆盖基础工具、Python/Node/Docker 运行时、Ruff 与 bash-language-server 等 LSP 工具、AI CLI 工具、Oracle Instant Client、GUI 应用（含 Desktop 条目）、主题与字体、Python 库、Cron 任务，以及 Mint 专属主题。Go / Rust / Vue / React 为可选组件，生成前会先询问用户勾选，未勾选则不写入。支持 Ubuntu / Debian / Linux Mint（apt）与 Fedora / RHEL / CentOS Stream / Rocky / AlmaLinux（dnf/yum）。 |
 
 > 新增 Skill 后，请在本表补充一行。
@@ -46,8 +46,8 @@ wl-xiang_skills.tgz
 │   └── init-linux/
 │       ├── SKILL.md
 │       └── scripts/
-├── repo-deploy-packager.tgz
-│   └── repo-deploy-packager/
+├── ship-repo-offline.tgz
+│   └── ship-repo-offline/
 │       ├── SKILL.md
 │       └── scripts/
 └── ...
@@ -73,9 +73,9 @@ cd workbuddy-skills
 
 # 2. 把指定 Skill 复制（或软链）到 WorkBuddy 的 skills 目录
 #    复制：
-cp -r skills/repo-deploy-packager ~/.workbuddy/skills/
+cp -r skills/ship-repo-offline ~/.workbuddy/skills/
 #    或软链（便于跟随仓库更新，推荐）：
-ln -s "$(pwd)/skills/repo-deploy-packager" ~/.workbuddy/skills/repo-deploy-packager
+ln -s "$(pwd)/skills/ship-repo-offline" ~/.workbuddy/skills/ship-repo-offline
 
 # 3. 重启 / 重新打开 WorkBuddy 会话，技能即可自动加载
 ```

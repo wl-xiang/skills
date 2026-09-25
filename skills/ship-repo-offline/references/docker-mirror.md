@@ -11,7 +11,7 @@ fails (e.g. mainland China). Configure it BEFORE Phase 2 (pulls/builds) so image
 
 > ⚠️ The one-click method uses `sudo` and modifies the host's Docker daemon. The agent
 > must NOT run it automatically — present it to the user and let them execute it
-> (e.g. `bash skills/repo-deploy-packager/scripts/setup-docker-mirror.sh`).
+> (e.g. `bash skills/ship-repo-offline/scripts/setup-docker-mirror.sh`).
 
 ## Method A — One-click config script (recommended, simplest)
 

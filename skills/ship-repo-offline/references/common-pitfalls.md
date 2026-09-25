@@ -1,4 +1,4 @@
-# Common Pitfalls (repo-deploy-packager)
+# Common Pitfalls (ship-repo-offline)
 
 Recurring failure modes observed while deploying/packaging real repos
 (excalidraw, hoppscotch, …). Read this when a phase fails unexpectedly.

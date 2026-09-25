@@ -5,7 +5,7 @@
 #   - [4-3] docker load the image archive (uses a RELATIVE path on purpose — see note)
 #   - [4-4] extract source-code.tgz to a temp dir, count files, confirm no .git
 #
-# Designed to be called by the repo-deploy-packager skill Phase 4. --arch must match
+# Designed to be called by the ship-repo-offline skill Phase 4. --arch must match
 # the value passed to pack.sh (amd64/x86_64 -> x64, arm64/aarch64 -> arm).
 set -euo pipefail
 
