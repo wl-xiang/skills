@@ -1,6 +1,6 @@
 ---
 name: docker-images-tgz-action
-description: This skill should be used when the user wants a GitHub Actions workflow (for ANY repository) that produces all Docker images for a target deployment platform (linux/amd64 or linux/arm64). Build mode builds one image from a Dockerfile path; Pull mode pulls every image-only service AND builds every build: service of a docker compose file (mixed pull+build), auto-naming unnamed builds as repo:latest with -1/-2 suffixes on collision. All resulting images are packed into ONE TGZ workflow artifact plus a separate SHA256 artifact, and the workflow renders a full Action Summary (configuration, image list with sizes, archive size, SHA256, offline restore guide). The skill inspects the target repo's context first, confirms configuration with the user, then renders the ready-to-commit workflow via a bundled generator script. Use it for any "create a GitHub Action to build/pull and package Docker images into a TGZ artifact" request.
+description: This skill should be used when the user wants a GitHub Actions workflow (for ANY repository) that produces all Docker images for a target deployment platform (linux/amd64 or linux/arm64). Build mode builds one image from a Dockerfile path; Pull mode pulls every image-only service AND builds every build: service of a docker compose file (mixed pull+build), auto-naming unnamed builds as repo:latest with -1/-2 suffixes on collision. All resulting images are packed into ONE TGZ workflow artifact plus a separate SHA256 artifact, and the workflow renders a full Action Summary (configuration, image list with sizes, archive size, SHA256, offline restore guide). THE DELIVERABLE IS A SINGLE WORKFLOW YAML FILE (.github/workflows/docker-images.yml) WRITTEN INTO THE TARGET REPO — the Docker build/pull/pack pipeline runs INSIDE GitHub Actions when the user triggers it, NEVER locally by the agent. The skill inspects the target repo's context first, confirms baked-in defaults with the user, then renders the workflow via a bundled generator script. Use it for any "create a GitHub Action to build/pull and package Docker images into a TGZ artifact" request.
 agent_created: true
 ---
 
@@ -17,16 +17,56 @@ Generate a GitHub Actions workflow for any repository that:
 - and writes a full **Action Summary** (configuration, compose service classes,
   image list with sizes, archive size + SHA256, offline restore guide).
 
+## ⚠️ Deliverable & Execution Boundary — READ THIS FIRST
+
+**The ONLY deliverable of this skill is ONE file:**
+
+```
+<target_repo>/.github/workflows/docker-images.yml
+```
+
+**Execution boundary (mandatory):**
+
+- **The agent's job (local, this session)**: inspect the repo context → confirm
+  baked-in defaults with the user → **render the workflow YAML file** → present
+  it to the user. That's all.
+- **GitHub Actions' job (cloud, later)**: when the user commits the YAML and
+  clicks **Run workflow**, GitHub Actions builds / pulls the images, packs the
+  TGZ, and uploads the artifacts. None of that happens here.
+
+**NEVER do these locally as part of this skill:**
+
+- ❌ `docker build` / `docker buildx build` / `docker compose build`
+- ❌ `docker pull` / `docker compose pull`
+- ❌ `docker save` / `docker load` / creating TGZ archives
+- ❌ Asking the user "which platform / which mode" **in order to execute
+  something now** — those questions exist ONLY to decide the `default:` values
+  baked into the YAML. Nothing is executed with them locally.
+
+If the user actually wants a **local** build-and-pack (run Docker on this
+machine right now), that is a different task — suggest the `ship-repo-offline`
+skill instead.
+
+**How to start (correct first action)**: do NOT open with parameter questions.
+Start by **inspecting the repository** (Phase 1 below), report what was found,
+and only then ask the user to confirm defaults (Phase 2). The user's very first
+visible outcome should be repo-context findings, not an interrogation.
+
 ## When To Use
 
 - The user asks to "create a GitHub Action / workflow" that builds or pulls
   Docker images for a target server platform and packages them as a TGZ
-  artifact (typically for offline deployment to an intranet / air-gapped server).
+  artifact (typically for offline deployment to an intranet / air-gapped
+  server), and the workflow should run **in GitHub Actions**.
 - The user mentions: target platform `linux/amd64` / `linux/arm64`, build mode
   Build or Pull, Dockerfile path, docker-compose.yml, docker save, images TGZ
   artifact, or an Action Summary for the whole flow.
-- The user points at ANY repository (local path or git URL) that needs this
-  workflow generated based on its context.
+- The user opens the agent **inside a repository's path** (typical usage: open
+  the repo locally, open the agent there) and asks for this workflow to be
+  generated based on the project's actual situation (Dockerfile / compose
+  files found in the repo).
+- NOT this skill: the user wants Docker images built/packed **locally right
+  now** (→ `ship-repo-offline`), or wants an existing workflow debugged.
 
 ## Naming & Artifact Rules (from confirmed requirements — MANDATORY)
 
@@ -49,11 +89,12 @@ Generate a GitHub Actions workflow for any repository that:
 
 ## General Constraints
 
-- Inspect the target repository **read-only**. The only write is the generated
+- Inspect the target repository **read-only**. The ONLY write is the generated
   workflow file, and only after confirming an existing file may be replaced.
 - Never push/commit to the target repo on the user's behalf unless asked.
 - All configuration is baked in as workflow_dispatch input **defaults**, so the
-  user can still override platform / mode / paths / image name / tag per run.
+  user can still override platform / mode / paths / image name / tag per run
+  in the "Run workflow" dialog.
 - Never guess a compose file's service structure — read it (Phase 1) and
   report what was detected before generating anything.
 
@@ -61,15 +102,18 @@ Generate a GitHub Actions workflow for any repository that:
 
 ## Phase 0 — Locate the Target Repository
 
-1. If the user gave a **local path**, work there directly.
-2. If the user gave a **git URL**, clone it to a temp dir
+1. If the agent was opened inside the repository (typical), the current
+   workspace IS the target repo — use it directly.
+2. If the user pointed at a local path elsewhere, work there read-only.
+3. If the user gave a **git URL**, clone it to a temp dir
    (`git clone --depth 1 <url>`) and use that as the working root.
-3. `<repo_name>` = last path segment of the URL / directory name, stripped of
+4. `<repo_name>` = last path segment of the URL / directory name, stripped of
    `.git` (this drives artifact naming and the default image name).
 
-## Phase 1 — Repository Context Detection (read-only)
+## Phase 1 — Repository Context Detection (read-only, DO THIS FIRST)
 
-Report ALL of the following before asking for configuration:
+Before asking the user ANYTHING, inspect the repo and report ALL of the
+following:
 
 1. **Dockerfiles**: root `Dockerfile`, `Dockerfile.*`, `*.dockerfile`, and
    shallow subdirectories (1–2 levels). List every candidate with its path.
@@ -88,9 +132,14 @@ Report ALL of the following before asking for configuration:
    exists, else `pull` if a compose file exists; corresponding path defaults;
    image name = `<repo_name>` lowercased; tag = `latest`.
 
-## Phase 2 — Confirm Configuration (AskUserQuestion)
+Present the findings as a short report BEFORE moving to Phase 2, so the user
+sees the plan is grounded in their actual repo.
 
-Ask (skip any item the user already specified):
+## Phase 2 — Confirm YAML Defaults (AskUserQuestion)
+
+These answers become the `default:` values baked into the workflow file —
+they are NOT parameters for a local run. Ask (skip any item the user already
+specified):
 
 1. **Platform**: `linux/amd64` or `linux/arm64`.
 2. **Build mode**: `build` or `pull`.
@@ -100,9 +149,11 @@ Ask (skip any item the user already specified):
 4. **Image name / tag**: defaults `<repo_name>` / `latest` (used for the
    build-mode image, and for auto-naming build-only services in pull mode).
 
-Then state the resolved configuration in one short summary block and proceed.
+Then state the resolved configuration in one short summary block and proceed
+directly to Phase 3 — do NOT ask "shall I run it?"; there is nothing to run
+locally.
 
-## Phase 3 — Generate the Workflow
+## Phase 3 — Generate the Workflow YAML (the deliverable)
 
 Run the bundled generator (use the installed skill's directory):
 
@@ -122,17 +173,20 @@ python3 <skill_dir>/scripts/generate_workflow.py \
   `--force` is passed — ask the user first in that case.
 - The script validates paths are repo-relative and prints the baked-in
   defaults when done.
-- After generation, show the user the key parts of the rendered workflow
-  (inputs with defaults, and the steps for the chosen mode).
+- After generation, **present the YAML file to the user** (present_files) and
+  show the key parts of the rendered workflow (inputs with defaults, and the
+  steps for the chosen mode).
 
 ## Phase 4 — Delivery Notes
 
-Tell the user (concise, in Chinese or the user's language):
+The deliverable is the YAML file from Phase 3. Tell the user (concise, in the
+user's language):
 
-1. **Commit & push** the workflow file to the target repository.
+1. **This is the only thing generated locally** — the file
+   `.github/workflows/docker-images.yml`; commit & push it to the repository.
 2. Trigger: repo → **Actions** → **Docker Images TGZ** → **Run workflow**;
    every input is pre-filled with the baked-in defaults and can be changed
-   per run.
+   per run. The actual build / pull / pack all happen on GitHub's runners.
 3. Artifacts land in the run's **Artifacts** section:
    `<repo>_<arch>_docker-images.tgz` (+ `.sha256`); restore offline with
    `sha256sum -c <file>.sha256` then `docker load -i <file>.tgz`.
