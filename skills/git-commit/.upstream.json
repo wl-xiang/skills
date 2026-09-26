@@ -1,0 +1,11 @@
+{
+  "skill": "git-commit",
+  "repo": "https://github.com/github/awesome-copilot",
+  "path": "skills/git-commit",
+  "ref": "main",
+  "commit": "6c4d33b9cfca967a28bb2962ef4d55e4a384c88c",
+  "synced_at": "2026-09-26T17:22:52Z",
+  "files": [
+    "SKILL.md"
+  ]
+}

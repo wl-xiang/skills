@@ -1,0 +1,18 @@
+{
+  "defaults": {
+    "ref": null
+  },
+  "skills": {
+    "git-commit": {
+      "enabled": true,
+      "upstream": {
+        "repo": "https://github.com/github/awesome-copilot",
+        "ref": "main",
+        "path": "skills/git-commit"
+      },
+      "keep": [
+        ".upstream.json"
+      ]
+    }
+  }
+}
